@@ -11,7 +11,6 @@ import {
   getApiKeyStatus,
   getRepoStatus,
   initContext,
-  saveApiKey,
 } from "../lib/tauri";
 import type {
   ApiKeyStatusResult,
@@ -30,7 +29,7 @@ function describeError(errorCode: string | null): string {
     case "no_staged_changes":
       return "There are no staged changes yet. Run git add first, then generate again.";
     case "missing_api_key":
-      return "Add a Gemini API key before generation is allowed.";
+      return "Add GEMINI_API_KEY or GOOGLE_API_KEY to the project .env before generation is allowed.";
     case "invalid_api_key":
       return "The saved Gemini API key was rejected. Replace it and try again.";
     case "diff_too_large":
@@ -59,7 +58,7 @@ function keyStatusTone(status: ApiKeyStatusResult["keyStatus"]) {
 export default function App() {
   const [viewState, setViewState] = useState<ViewState>("invalid_launch_context");
   const [booting, setBooting] = useState(true);
-  const [submittingKey, setSubmittingKey] = useState(false);
+  const [refreshingRepo, setRefreshingRepo] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
   const [repoContext, setRepoContext] = useState<RepoContextResult | null>(null);
   const [repoStatus, setRepoStatus] = useState<RepoStatusResult | null>(null);
@@ -130,40 +129,72 @@ export default function App() {
     };
   }, []);
 
-  async function refreshRepoState() {
+  async function refreshRepoState({
+    preserveViewState = false,
+    silent = false,
+  }: {
+    preserveViewState?: boolean;
+    silent?: boolean;
+  } = {}) {
     if (!repoContext?.repoRoot) {
       return;
     }
 
-    const status = await getRepoStatus(repoContext.repoRoot);
-    setRepoStatus(status);
-
-    if (!status.hasStagedChanges || status.errorCode === "no_staged_changes") {
-      setViewState("no_staged_changes");
-    } else {
-      setViewState("ready_to_generate");
+    if (!silent) {
+      setRefreshingRepo(true);
     }
-  }
-
-  async function handleSaveApiKey(apiKey: string) {
-    setSubmittingKey(true);
-    setInlineError(null);
 
     try {
-      const result = await saveApiKey(apiKey);
+      const status = await getRepoStatus(repoContext.repoRoot);
+      setRepoStatus(status);
 
-      if (!result.success) {
-        setInlineError("GitRoast could not save the API key to secure storage.");
-        return;
-      }
+      setViewState((current) => {
+        if (!status.hasStagedChanges || status.errorCode === "no_staged_changes") {
+          return "no_staged_changes";
+        }
 
-      const nextKeyStatus = await getApiKeyStatus();
-      setApiKeyStatus(nextKeyStatus);
-      await refreshRepoState();
+        if (
+          preserveViewState &&
+          (current === "generation_success" || current === "generation_error")
+        ) {
+          return current;
+        }
+
+        return "ready_to_generate";
+      });
     } finally {
-      setSubmittingKey(false);
+      if (!silent) {
+        setRefreshingRepo(false);
+      }
     }
   }
+
+  useEffect(() => {
+    if (!repoContext?.repoRoot || !apiKeyStatus?.keyPresent) {
+      return;
+    }
+
+    const syncRepoState = () => {
+      void refreshRepoState({ preserveViewState: true, silent: true });
+    };
+
+    const intervalId = window.setInterval(syncRepoState, 5000);
+    window.addEventListener("focus", syncRepoState);
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        syncRepoState();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", syncRepoState);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [repoContext?.repoRoot, apiKeyStatus?.keyPresent]);
 
   async function handleGenerate() {
     if (!repoContext?.repoRoot) {
@@ -180,7 +211,7 @@ export default function App() {
     if (result.success && result.message) {
       const nextKeyStatus = await getApiKeyStatus();
       setApiKeyStatus(nextKeyStatus);
-      await refreshRepoState();
+      await refreshRepoState({ preserveViewState: true });
       setViewState("generation_success");
       return;
     }
@@ -223,6 +254,8 @@ export default function App() {
               repoStatus={repoStatus}
               booting={booting}
               viewState={viewState}
+              refreshingRepo={refreshingRepo}
+              onRefresh={() => refreshRepoState({ preserveViewState: true })}
             />
 
             <GeneratorPanel
@@ -263,6 +296,12 @@ export default function App() {
                   </span>
                 </div>
                 <div className="detail-row">
+                  <span className="detail-label">Source</span>
+                  <span className="detail-value">
+                    {apiKeyStatus?.keySource ?? "Project env not found"}
+                  </span>
+                </div>
+                <div className="detail-row">
                   <span className="detail-label">Validated</span>
                   <span className="detail-value">
                     {apiKeyStatus?.lastValidatedAt ?? "Not yet"}
@@ -272,11 +311,9 @@ export default function App() {
             </Panel>
 
             <ApiKeyForm
-              submitting={submittingKey}
               viewState={viewState}
               apiKeyStatus={apiKeyStatus}
               inlineError={inlineError}
-              onSave={handleSaveApiKey}
             />
           </div>
         </div>

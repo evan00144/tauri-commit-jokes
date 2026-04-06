@@ -7,6 +7,8 @@ type RepoSummaryProps = {
   repoStatus: RepoStatusResult | null;
   booting: boolean;
   viewState: ViewState;
+  refreshingRepo: boolean;
+  onRefresh: () => Promise<void>;
 };
 
 function getContextTone(viewState: ViewState) {
@@ -46,6 +48,8 @@ export function RepoSummary({
   repoStatus,
   booting,
   viewState,
+  refreshingRepo,
+  onRefresh,
 }: RepoSummaryProps) {
   const repoName = repoContext?.repoName ?? "Unknown repo";
   const repoRoot = repoContext?.repoRoot ?? "No repository detected";
@@ -55,7 +59,21 @@ export function RepoSummary({
     <Panel
       title="Repository Context"
       subtitle="GitRoast only reads staged Git changes from the directory that launched the app."
-      aside={<StatusPill tone={tone}>{contextLabel(viewState)}</StatusPill>}
+      aside={
+        <div className="panel-actions">
+          <StatusPill tone={tone}>{contextLabel(viewState)}</StatusPill>
+          <button
+            className="button-ghost"
+            type="button"
+            disabled={booting || refreshingRepo}
+            onClick={() => {
+              void onRefresh();
+            }}
+          >
+            {refreshingRepo ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
+      }
     >
       {booting ? (
         <div className="boot-note">Checking launch context and staged changes...</div>

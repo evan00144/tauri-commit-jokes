@@ -9,8 +9,9 @@ use thiserror::Error;
 
 pub const PROVIDER_NAME: &str = "gemini";
 pub const MODEL_NAME: &str = "gemini-2.5-flash";
-pub const PROMPT_VERSION: &str = "v1";
+pub const PROMPT_VERSION: &str = "v2";
 pub const DIFF_BYTE_LIMIT: usize = 250 * 1024;
+pub const ENV_KEY_NAMES: [&str; 2] = ["GEMINI_API_KEY", "GOOGLE_API_KEY"];
 
 #[derive(Debug, Error)]
 pub enum AppError {
@@ -74,8 +75,8 @@ pub struct AppConfig {
     pub onboarding_completed: bool,
     pub provider_name: String,
     pub model_name: String,
-    pub key_alias: String,
     pub key_status: KeyStatus,
+    pub key_source: Option<String>,
     pub last_validated_at: Option<String>,
     pub prompt_version: String,
 }
@@ -86,8 +87,8 @@ impl Default for AppConfig {
             onboarding_completed: false,
             provider_name: PROVIDER_NAME.into(),
             model_name: MODEL_NAME.into(),
-            key_alias: crate::secure_store::KEY_ALIAS.into(),
             key_status: KeyStatus::Missing,
+            key_source: None,
             last_validated_at: None,
             prompt_version: PROMPT_VERSION.into(),
         }
@@ -187,16 +188,6 @@ pub struct SaveApiKeyResult {
 }
 
 impl SaveApiKeyResult {
-    pub fn saved() -> Self {
-        Self {
-            success: true,
-            provider_name: PROVIDER_NAME.into(),
-            model_name: MODEL_NAME.into(),
-            key_status: "saved".into(),
-            error_code: None,
-        }
-    }
-
     pub fn error() -> Self {
         Self {
             success: false,
@@ -215,6 +206,7 @@ pub struct ApiKeyStatusResult {
     pub model_name: String,
     pub key_present: bool,
     pub key_status: String,
+    pub key_source: Option<String>,
     pub last_validated_at: Option<String>,
     pub error_code: Option<String>,
 }
@@ -230,6 +222,7 @@ impl ApiKeyStatusResult {
             } else {
                 "missing".into()
             },
+            key_source: config.key_source.clone(),
             last_validated_at: config.last_validated_at.clone(),
             error_code: None,
         }

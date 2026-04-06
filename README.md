@@ -44,7 +44,15 @@ pnpm install
 export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
-3. Launch the app for the current repository:
+3. Add a Gemini key to the project environment:
+
+```bash
+cp .env.example .env.local
+```
+
+Then edit `.env.local` and replace the placeholder value with your real Gemini API key.
+
+4. Launch the app for the current repository:
 
 ```bash
 scripts/cli/gitroast.sh
@@ -63,6 +71,6 @@ pnpm tauri:build
 
 - Only staged changes are read.
 - Only Gemini `gemini-2.5-flash` is supported.
-- API keys are stored in the OS credential store via `keyring`.
+- API keys are read from `.env.local`, `.env`, or inherited shell env.
 - The app never auto-commits in MVP.
 - The frontend owns clipboard copy behavior.

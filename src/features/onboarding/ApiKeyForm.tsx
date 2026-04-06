@@ -1,70 +1,56 @@
-import { useState } from "react";
 import { Panel } from "../../components/Panel";
 import { StatusPill } from "../../components/StatusPill";
 import type { ApiKeyStatusResult, ViewState } from "../../types/contracts";
 
 type ApiKeyFormProps = {
-  submitting: boolean;
   viewState: ViewState;
   apiKeyStatus: ApiKeyStatusResult | null;
   inlineError: string | null;
-  onSave: (apiKey: string) => Promise<void>;
 };
 
 export function ApiKeyForm({
-  submitting,
   viewState,
   apiKeyStatus,
   inlineError,
-  onSave,
 }: ApiKeyFormProps) {
-  const [apiKey, setApiKey] = useState("");
-
   const needsAttention =
     viewState === "missing_api_key" || apiKeyStatus?.keyStatus === "invalid";
 
+  const source = apiKeyStatus?.keySource;
+
   return (
     <Panel
-      title="Gemini API Key"
-      subtitle="Save your Google AI Studio key locally. GitRoast validates it on the first real generation call."
+      title="Gemini Env Source"
+      subtitle="GitRoast reads the Gemini key from the current repository environment instead of prompting the user."
       aside={
         needsAttention ? (
           <StatusPill tone="warning">Action needed</StatusPill>
         ) : (
-          <StatusPill tone="success">Stored locally</StatusPill>
+          <StatusPill tone="success">Project env detected</StatusPill>
         )
       }
     >
-      <form
-        className="field-group"
-        onSubmit={async (event) => {
-          event.preventDefault();
-          await onSave(apiKey);
-          setApiKey("");
-        }}
-      >
-        <label className="field-label" htmlFor="gemini-api-key">
-          Paste a Gemini API key from Google AI Studio
-        </label>
-        <input
-          id="gemini-api-key"
-          className="text-input"
-          type="password"
-          autoComplete="off"
-          value={apiKey}
-          onChange={(event) => setApiKey(event.currentTarget.value)}
-          placeholder="AIza..."
-        />
-        <div className="button-row">
-          <button
-            className="button-primary"
-            type="submit"
-            disabled={submitting || apiKey.trim().length === 0}
-          >
-            {submitting ? "Saving key..." : "Save API key"}
-          </button>
+      <div className="detail-list">
+        <div className="detail-row">
+          <span className="detail-label">Lookup order</span>
+          <span className="detail-value">`.env.local`, `.env`, shell env</span>
         </div>
-      </form>
+        <div className="detail-row">
+          <span className="detail-label">Accepted keys</span>
+          <span className="detail-value">`GEMINI_API_KEY`, `GOOGLE_API_KEY`</span>
+        </div>
+        <div className="detail-row">
+          <span className="detail-label">Resolved source</span>
+          <span className="detail-value">{source ?? "Not found"}</span>
+        </div>
+      </div>
+
+      {needsAttention ? (
+        <p className="error-copy">
+          Add `GEMINI_API_KEY=your_key` to this repo&apos;s `.env.local` or `.env`,
+          then refresh the repo status.
+        </p>
+      ) : null}
 
       {inlineError ? <p className="error-copy">{inlineError}</p> : null}
     </Panel>

@@ -133,6 +133,14 @@ button {
   margin-bottom: 14px;
 }
 
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .panel-title {
   margin: 0;
   font-size: 1.1rem;

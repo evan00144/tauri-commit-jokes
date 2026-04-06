@@ -4,7 +4,6 @@ import type {
   GenerateCommitMessageResult,
   RepoContextResult,
   RepoStatusResult,
-  SaveApiKeyResult,
 } from "../types/contracts";
 
 export function initContext(cwd: string) {
@@ -13,10 +12,6 @@ export function initContext(cwd: string) {
 
 export function getRepoStatus(repoRoot: string) {
   return invoke<RepoStatusResult>("get_repo_status", { repoRoot });
-}
-
-export function saveApiKey(apiKey: string) {
-  return invoke<SaveApiKeyResult>("save_api_key", { apiKey });
 }
 
 export function getApiKeyStatus() {

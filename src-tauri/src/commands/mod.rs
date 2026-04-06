@@ -27,12 +27,9 @@ fn active_launch_path(input: &str, launch: &LaunchContext) -> String {
     input.trim().to_string()
 }
 
-fn update_key_status(status: KeyStatus, timestamp: Option<String>) {
-    let mut config = load_app_config().unwrap_or_default();
-    config.key_status = status;
-    config.last_validated_at = timestamp;
-    config.onboarding_completed = true;
-    let _ = save_app_config(&config);
+fn repo_root_from_launch(launch: &LaunchContext) -> Option<std::path::PathBuf> {
+    let launch_path = launch.cwd.as_deref()?;
+    git::resolve_repo_root(launch_path).ok()
 }
 
 #[tauri::command]
@@ -83,55 +80,43 @@ pub fn get_repo_status(repo_root: String) -> RepoStatusResult {
 
 #[tauri::command]
 pub fn save_api_key(api_key: String) -> SaveApiKeyResult {
-    let trimmed = api_key.trim();
-
-    if trimmed.is_empty() {
-        return SaveApiKeyResult::error();
-    }
-
-    let mut config = load_app_config().unwrap_or_default();
-
-    match secure_store::store_api_key(trimmed) {
-        Ok(()) => {
-            config.onboarding_completed = true;
-            config.key_status = KeyStatus::Saved;
-            config.last_validated_at = None;
-            config.key_alias = secure_store::KEY_ALIAS.into();
-
-            if save_app_config(&config).is_ok() {
-                SaveApiKeyResult::saved()
-            } else {
-                SaveApiKeyResult::error()
-            }
-        }
-        Err(_) => SaveApiKeyResult::error(),
-    }
+    let _ = api_key;
+    SaveApiKeyResult::error()
 }
 
 #[tauri::command]
-pub fn get_api_key_status() -> ApiKeyStatusResult {
+pub fn get_api_key_status(launch: State<'_, LaunchContext>) -> ApiKeyStatusResult {
     let mut config = load_app_config().unwrap_or_default();
+    let Some(repo_root) = repo_root_from_launch(&launch) else {
+        config.key_status = KeyStatus::Missing;
+        config.key_source = None;
+        return ApiKeyStatusResult::from_config(&config, false);
+    };
 
-    match secure_store::has_api_key() {
-        Ok(true) => {
+    match secure_store::has_api_key(&repo_root) {
+        Ok(Some(source)) => {
             if matches!(config.key_status, KeyStatus::Missing) {
                 config.key_status = KeyStatus::Saved;
             }
-
+            config.key_source = Some(source);
             ApiKeyStatusResult::from_config(&config, true)
         }
-        Ok(false) => {
+        Ok(None) => {
             config.key_status = KeyStatus::Missing;
+            config.key_source = None;
             ApiKeyStatusResult::from_config(&config, false)
         }
-        Err(_) => ApiKeyStatusResult::from_config(&config, false),
+        Err(_) => {
+            config.key_source = None;
+            ApiKeyStatusResult::from_config(&config, false)
+        }
     }
 }
 
 #[tauri::command]
 pub async fn generate_commit_message(repo_root: String) -> GenerateCommitMessageResult {
     let repo_path = Path::new(&repo_root);
-    let api_key = match secure_store::read_api_key() {
+    let (api_key, key_source) = match secure_store::read_api_key(repo_path) {
         Ok(api_key) => api_key,
         Err(error) => return GenerateCommitMessageResult::failure(error.error_code()),
     };
@@ -151,7 +136,11 @@ pub async fn generate_commit_message(repo_root: String) -> GenerateCommitMessage
 
     match ai::generate_commit_message(&api_key, &diff).await {
         Ok(message) => {
-            update_key_status(KeyStatus::Valid, Some(Utc::now().to_rfc3339()));
+            let mut config = load_app_config().unwrap_or_default();
+            config.key_status = KeyStatus::Valid;
+            config.key_source = Some(key_source);
+            config.last_validated_at = Some(Utc::now().to_rfc3339());
+            let _ = save_app_config(&config);
             GenerateCommitMessageResult {
                 success: true,
                 message: Some(message),
@@ -162,7 +151,11 @@ pub async fn generate_commit_message(repo_root: String) -> GenerateCommitMessage
         }
         Err(error) => {
             if error.error_code() == "invalid_api_key" {
-                update_key_status(KeyStatus::Invalid, None);
+                let mut config = load_app_config().unwrap_or_default();
+                config.key_status = KeyStatus::Invalid;
+                config.key_source = Some(key_source);
+                config.last_validated_at = None;
+                let _ = save_app_config(&config);
             }
 
             GenerateCommitMessageResult::failure(error.error_code())

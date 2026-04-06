@@ -48,6 +48,7 @@ export type ApiKeyStatusResult = {
   modelName: "gemini-2.5-flash";
   keyPresent: boolean;
   keyStatus: "missing" | "saved" | "valid" | "invalid";
+  keySource: string | null;
   lastValidatedAt: string | null;
   errorCode: ErrorCode | null;
 };
