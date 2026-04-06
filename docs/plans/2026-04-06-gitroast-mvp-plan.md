@@ -2,7 +2,7 @@
 
 **Goal:** Build a Tauri desktop app that launches from the current repository, reads staged Git changes, generates one humorous commit message with Gemini 2.5 Flash, and lets the user copy the result.
 
-**Architecture:** The app is split into a Rust/Tauri backend for launch context, Git inspection, secure credential handling, and Gemini requests, plus a React/Vite frontend that renders onboarding, repo status, generation states, and copy interactions. The MVP is intentionally single-path and single-provider to keep implementation and validation tight.
+**Architecture:** The app is split into a Rust/Tauri backend for launch context, Git inspection, env-based Gemini API key detection, app-config Gemini model preference, and Gemini requests, plus a React/Vite frontend that renders onboarding, repo status, generation states, and copy interactions. The MVP is intentionally single-provider to keep implementation and validation tight.
 
 **Tech Stack:** Tauri, Rust, React, Vite, Google AI Studio Gemini API
 
@@ -20,7 +20,7 @@
 ### Required Behavior
 
 - `gitroast` launched from a terminal uses the current working directory only.
-- No folder picker or drag-and-drop fallback exists in MVP.
+- An optional in-app repo picker may override the original launch path after startup.
 - The frontend receives enough context to determine whether it should proceed with repo checks or show an invalid launch state.
 
 ### Acceptance Criteria
@@ -64,29 +64,32 @@
 - A repo with zero staged changes maps to `no_staged_changes`.
 - Git command failures map to a named error state instead of crashing the app.
 
-## Milestone 3: Secure Gemini API key storage
+## Milestone 3: Env-based Gemini API key detection and model preference
 
 ### Scope
 
-- Add onboarding/settings for the user to save a Gemini API key.
-- Store the secret in secure OS-backed storage.
-- Persist only non-secret metadata in app config.
+- Add onboarding/setup guidance for the user to configure a Gemini API key in env.
+- Read the key from `.env.local`, `.env`, or inherited shell env.
+- Persist only non-secret metadata and the selected Gemini model in app config.
 - Expose API key presence/status to the frontend.
+- Expose a model picker with a default of `gemini-2.5-flash`.
 
 ### Required Behavior
 
-- Raw API keys are never written to repo files or plain local config.
+- Raw API keys are never written by the app to local config or app-managed storage.
+- Model selection is not read from env in MVP; it is saved in app config.
 - The frontend can distinguish:
   - missing key
-  - saved key
+  - detected key
   - invalid key after a failed provider call
-- The user can replace an existing key.
+- The user can replace an existing key by updating env and refreshing.
+- The user can switch Gemini models without editing env files.
 
 ### Acceptance Criteria
 
-- A first-time user sees API key onboarding before generation is allowed.
-- Saving a key succeeds without exposing the raw key in normal config.
-- Stored-key status survives app relaunch.
+- A first-time user sees env-setup guidance before generation is allowed.
+- Env-detected status survives app relaunch.
+- The selected model survives app relaunch.
 - Invalid-key outcomes are visible and recoverable.
 
 ## Milestone 4: Gemini commit-message generation service
@@ -101,7 +104,7 @@
 ### AI Contract
 
 - Input: staged diff plus fixed prompt
-- Model: `gemini-2.5-flash`
+- Model: app-selected Gemini model, defaulting to `gemini-2.5-flash`
 - Output: one humorous commit message string only
 
 ### Required Behavior
@@ -121,7 +124,7 @@
 ### Scope
 
 - Implement the main window UI for all required states.
-- Add `Generate`, `Copy`, and settings/API-key actions.
+- Add `Generate`, `Copy`, refresh, repo switching, env-setup guidance, and model settings.
 - Show repository and staged-change context clearly.
 
 ### Required Frontend States
@@ -170,7 +173,7 @@
 
 - Every failure maps to a named user-visible state, not a generic crash.
 - The user always has a next action: fix key, stage files, relaunch from repo, or retry generation.
-- No hidden fallback flow reintroduces folder picking, auto-commit, or multi-provider behavior.
+- No hidden fallback flow reintroduces auto-commit or multi-provider behavior.
 
 ## Test Scenarios
 
@@ -192,10 +195,10 @@
 
 ### Credential Handling
 
-- Launch with no stored key.
+- Launch with no env key.
 - Expected result: `missing_api_key` gate before generation.
 
-- Save an invalid key and attempt generation.
+- Configure an invalid key and attempt generation.
 - Expected result: `generation_error` with invalid-key messaging and retry path.
 
 ### Provider and Payload Failures
@@ -222,6 +225,6 @@ These items stay out of MVP even if implementation seems convenient:
 ## Default Assumptions
 
 - `gitroast` is the only supported launch entrypoint for MVP.
-- Gemini 2.5 Flash is the only model used in MVP.
+- Supported presets include current Gemini text-generation models, with `gemini-2.5-flash` as the default saved in app config.
 - The fixed prompt version is tracked in settings and generation records.
 - Copy is the final in-app action; committing remains in the user's existing workflow.

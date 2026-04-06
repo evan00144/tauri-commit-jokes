@@ -5,10 +5,13 @@ import { GeneratorPanel } from "../features/generator/GeneratorPanel";
 import { RepoSummary } from "../features/repo-status/RepoSummary";
 import { copyText } from "../lib/clipboard";
 import {
+  chooseRepoRoot,
   generateCommitMessage,
   getApiKeyStatus,
   getRepoStatus,
   initContext,
+  openExternal,
+  setModelPreference,
 } from "../lib/tauri";
 import type {
   ApiKeyStatusResult,
@@ -31,7 +34,7 @@ function describeError(errorCode: string | null): string {
     case "invalid_api_key":
       return "The Gemini API key from your env was rejected. Replace it and try again.";
     case "quota_exhausted":
-      return "The selected Gemini model is hitting quota limits for this project. Switch to gemini-2.5-flash or gemini-2.5-flash-lite, or wait for quota to reset.";
+      return "The selected Gemini model is hitting quota limits for this project. Pick a lighter Gemini model in the app settings or wait for quota to reset.";
     case "diff_too_large":
       return "The staged diff is larger than the MVP limit of 250 KB.";
     case "provider_timeout":
@@ -47,8 +50,11 @@ export default function App() {
   const [viewState, setViewState] = useState<ViewState>("invalid_launch_context");
   const [booting, setBooting] = useState(true);
   const [refreshingRepo, setRefreshingRepo] = useState(false);
+  const [switchingRepo, setSwitchingRepo] = useState(false);
+  const [savingModel, setSavingModel] = useState(false);
   const [generationNonce, setGenerationNonce] = useState(0);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
+  const [launchPath, setLaunchPath] = useState(window.__GITROAST_CWD__ ?? "");
   const [repoContext, setRepoContext] = useState<RepoContextResult | null>(null);
   const [repoStatus, setRepoStatus] = useState<RepoStatusResult | null>(null);
   const [apiKeyStatus, setApiKeyStatus] = useState<ApiKeyStatusResult | null>(null);
@@ -78,56 +84,39 @@ export default function App() {
     return "ready_to_generate";
   }
 
-  useEffect(() => {
-    let cancelled = false;
+  async function syncAppState(nextLaunchPath: string) {
+    setBooting(true);
+    setInlineError(null);
+    setCopyState("idle");
+    setGeneration(null);
 
-    async function bootstrap() {
-      setBooting(true);
-      setInlineError(null);
-      setCopyState("idle");
+    const context = await initContext(nextLaunchPath);
+    setRepoContext(context);
 
-      const cwd = window.__GITROAST_CWD__ ?? "";
-      const context = await initContext(cwd);
-
-      if (cancelled) {
-        return;
-      }
-
-      setRepoContext(context);
-
-      if (!context.gitAvailable || !context.isRepo || !context.repoRoot) {
-        setViewState("invalid_launch_context");
-        setRepoStatus(null);
-        setBooting(false);
-        return;
-      }
-
-      const keyStatus = await getApiKeyStatus();
-
-      if (cancelled) {
-        return;
-      }
-
-      setApiKeyStatus(keyStatus);
-
-      const status = await getRepoStatus(context.repoRoot);
-
-      if (cancelled) {
-        return;
-      }
-
-      setRepoStatus(status);
-      setViewState(resolveViewState(keyStatus, status));
-
+    if (!context.gitAvailable || !context.isRepo || !context.repoRoot) {
+      setRepoStatus(null);
+      setApiKeyStatus(null);
+      setViewState("invalid_launch_context");
       setBooting(false);
+      return;
     }
 
-    bootstrap();
+    const keyStatus = await getApiKeyStatus(nextLaunchPath);
+    setApiKeyStatus(keyStatus);
 
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    const status = await getRepoStatus(context.repoRoot);
+    setRepoStatus(status);
+    setViewState(resolveViewState(keyStatus, status));
+    setBooting(false);
+  }
+
+  useEffect(() => {
+    async function bootstrap() {
+      await syncAppState(launchPath);
+    }
+
+    void bootstrap();
+  }, [launchPath]);
 
   async function refreshRepoState({
     preserveViewState = false,
@@ -199,17 +188,33 @@ export default function App() {
     setGeneration(result);
 
     if (result.success && result.message) {
-      const nextKeyStatus = await getApiKeyStatus();
+      const nextKeyStatus = await getApiKeyStatus(launchPath);
       setApiKeyStatus(nextKeyStatus);
       await refreshRepoState({ preserveViewState: true });
       setViewState("generation_success");
       return;
     }
 
-    const nextKeyStatus = await getApiKeyStatus();
+    const nextKeyStatus = await getApiKeyStatus(launchPath);
     setApiKeyStatus(nextKeyStatus);
     setInlineError(describeError(result.errorCode));
     setViewState("generation_error");
+  }
+
+  async function handleChooseRepo() {
+    setSwitchingRepo(true);
+    setInlineError(null);
+
+    try {
+      const nextPath = await chooseRepoRoot();
+      if (!nextPath) {
+        return;
+      }
+
+      setLaunchPath(nextPath);
+    } finally {
+      setSwitchingRepo(false);
+    }
   }
 
   async function handleCopy() {
@@ -221,8 +226,46 @@ export default function App() {
     setCopyState(copied ? "copied" : "error");
   }
 
+  async function handleSaveModel(modelName: string) {
+    setSavingModel(true);
+    setInlineError(null);
+
+    try {
+      const nextKeyStatus = await setModelPreference(launchPath, modelName);
+      setApiKeyStatus(nextKeyStatus);
+      setViewState((current) => resolveViewState(nextKeyStatus, repoStatus, current));
+    } finally {
+      setSavingModel(false);
+    }
+  }
+
+  async function handleOpenExternal(url: string) {
+    try {
+      await openExternal(url);
+    } catch {
+      setInlineError("GitRoast could not open the external link in your browser.");
+    }
+  }
+
   const generationError = generation && !generation.success ? describeError(generation.errorCode) : inlineError;
   const activeModel = apiKeyStatus?.modelName ?? "gemini-2.5-flash";
+  const tutorialSteps = [
+    {
+      step: "01",
+      title: "Stage the mess",
+      body: "Run `git add` in the repo you actually want to roast. GitRoast only reads staged changes.",
+    },
+    {
+      step: "02",
+      title: "Point GitRoast at the repo",
+      body: "Launch from that folder or use `Choose repo root` if you want to switch projects mid-session.",
+    },
+    {
+      step: "03",
+      title: "Generate and copy",
+      body: "Pick a Gemini model, click `Generate`, then copy the least embarrassing joke into your normal commit flow.",
+    },
+  ];
 
   return (
     <main className="app-shell">
@@ -235,6 +278,77 @@ export default function App() {
             sends them to {activeModel}, and gives you one commit message
             worth copying.
           </p>
+          <div className="hero-actions hero-actions-primary">
+            <button
+              className="button-ghost"
+              type="button"
+              onClick={() => {
+                void handleChooseRepo();
+              }}
+              disabled={booting || switchingRepo}
+            >
+              {switchingRepo ? "Opening picker..." : "Choose repo root"}
+            </button>
+          </div>
+          <div className="hero-cta-grid">
+            <button
+              className="promo-card promo-card-source link-button"
+              type="button"
+              onClick={() => {
+                void handleOpenExternal("https://github.com/evan00144/tauri-commit-jokes");
+              }}
+            >
+              <span className="promo-icon" aria-hidden="true">
+                {"</>"}
+              </span>
+              <span className="promo-copy">
+                <strong>View source</strong>
+                <span>
+                  Audit the code, open issues, and see exactly how GitRoast reads your staged diff.
+                </span>
+              </span>
+              <span className="promo-kicker">Open GitHub</span>
+            </button>
+            <button
+              className="promo-card promo-card-drink link-button"
+              type="button"
+              onClick={() => {
+                void handleOpenExternal("https://trakteer.id/evan_0014");
+              }}
+            >
+              <span className="promo-icon" aria-hidden="true">
+                +$
+              </span>
+              <span className="promo-copy">
+                <strong>Buy me a drink</strong>
+                <span>
+                  If the app saved you from writing another dead-eyed commit summary, fund the next round of improvements.
+                </span>
+              </span>
+              <span className="promo-kicker">Support GitRoast</span>
+            </button>
+          </div>
+        </section>
+
+        <section className="panel tutorial-panel">
+          <div className="panel-header tutorial-header">
+            <div>
+              <h2 className="panel-title">How GitRoast Works</h2>
+              <p className="panel-subtitle">
+                One fast loop. No hidden Git magic. No auto-commit.
+              </p>
+            </div>
+            <div className="tutorial-badge">3-step setup</div>
+          </div>
+          <div className="tutorial-grid">
+            {tutorialSteps.map((item) => (
+              <article className="tutorial-card" key={item.step}>
+                <div className="tutorial-step">{item.step}</div>
+                <h3>{item.title}</h3>
+                <p>{item.body}</p>
+              </article>
+            ))}
+          </div>
         </section>
 
         <div className="grid">
@@ -245,13 +359,17 @@ export default function App() {
               apiKeyStatus={apiKeyStatus}
               booting={booting}
               viewState={viewState}
-              refreshingRepo={refreshingRepo}
+              refreshingRepo={refreshingRepo || switchingRepo}
+              launchPath={launchPath}
+              onChooseRepo={handleChooseRepo}
               onRefresh={() => refreshRepoState({ preserveViewState: true })}
             />
             <ApiKeyForm
               viewState={viewState}
               apiKeyStatus={apiKeyStatus}
+              savingModel={savingModel}
               inlineError={viewState === "missing_api_key" ? generationError : null}
+              onSaveModel={handleSaveModel}
             />
           </div>
 

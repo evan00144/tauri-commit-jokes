@@ -2,12 +2,12 @@
 
 ## Purpose
 
-This ERD describes the logical data model for the GitRoast MVP. It is not a commitment to a relational database. Some entities are persisted, some are runtime-only, and one entity includes a secret whose value must live in secure OS-backed storage.
+This ERD describes the logical data model for the GitRoast MVP. It is not a commitment to a relational database. Some entities are persisted and some are runtime-only. The secret itself is not persisted by the app in MVP; it is read from env at runtime.
 
 The model is intentionally limited to the MVP:
 - one provider: `gemini`
-- one model: `gemini-2.5-flash`
-- one launch flow: `gitroast` from the current working directory
+- default model: `gemini-2.5-flash`
+- one launch flow: `gitroast` from the current working directory, with optional in-app repo switching
 
 ## Mermaid ERD
 
@@ -27,7 +27,7 @@ erDiagram
     PROVIDER_CREDENTIAL {
         string provider_name
         string model_name
-        string key_alias
+        string key_source
         string key_status
         datetime last_validated_at
         datetime created_at
@@ -62,10 +62,11 @@ erDiagram
 
 ### `AppSettings`
 
-Represents non-secret application settings that define whether onboarding is complete and which prompt version the app should use.
+Represents non-secret application settings that define whether onboarding is complete, which prompt version the app should use, and which Gemini model the user selected.
 
 Fields:
-- `onboarding_completed`: whether the user has stored a valid provider credential at least once
+- `onboarding_completed`: whether the user has successfully completed env-based setup at least once
+- `model_name`: selected Gemini model stored in app config, defaulting to `gemini-2.5-flash`
 - `prompt_version`: version label for the fixed internal commit-generation prompt
 - `created_at`
 - `updated_at`
@@ -76,8 +77,8 @@ Represents the active provider configuration for the MVP. In v1 this record is f
 
 Fields:
 - `provider_name`: fixed as `gemini`
-- `model_name`: fixed as `gemini-2.5-flash`
-- `key_alias`: identifier used to retrieve the secret from secure storage
+- `model_name`: resolved from app config or defaults to `gemini-2.5-flash`
+- `key_source`: source label such as `.env.local`, `.env`, or shell env
 - `key_status`: lifecycle state such as `missing`, `saved`, `valid`, or `invalid`
 - `last_validated_at`
 - `created_at`
@@ -109,7 +110,7 @@ Fields:
 - `output_message`: generated commit message when successful
 - `status`: such as `success`, `provider_error`, `invalid_key`, `timeout`, or `diff_too_large`
 - `error_code`: normalized error identifier for UI mapping
-- `model_name`: fixed as `gemini-2.5-flash` in MVP
+- `model_name`: one of the supported Gemini model names
 - `created_at`
 
 ## Relationship Defaults
@@ -122,14 +123,14 @@ These relationships support the MVP without implying multi-account or multi-prov
 
 ## Storage Boundaries
 
-### Secret Storage
+### Secret Handling
 
-The raw Gemini API key must not live in repo files or plain local config. It should live in:
-- macOS Keychain
-- Windows Credential Manager
-- Linux Secret Service or equivalent secure credential store
+The raw Gemini API key is not persisted by the app in MVP. It is read at runtime from:
+- `.env.local`
+- `.env`
+- inherited shell env
 
-The app should store only the `key_alias` and status metadata in normal app-managed state.
+The app stores only source labels, validation metadata, and model preference in normal app-managed state.
 
 ### Local App Config
 

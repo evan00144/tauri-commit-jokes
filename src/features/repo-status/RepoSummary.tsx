@@ -14,6 +14,8 @@ type RepoSummaryProps = {
   booting: boolean;
   viewState: ViewState;
   refreshingRepo: boolean;
+  launchPath: string;
+  onChooseRepo: () => Promise<void>;
   onRefresh: () => Promise<void>;
 };
 
@@ -56,6 +58,8 @@ export function RepoSummary({
   booting,
   viewState,
   refreshingRepo,
+  launchPath,
+  onChooseRepo,
   onRefresh,
 }: RepoSummaryProps) {
   const repoName = repoContext?.repoName ?? "Unknown repo";
@@ -63,19 +67,33 @@ export function RepoSummary({
   const tone = getContextTone(viewState);
   const activeModel = apiKeyStatus?.modelName ?? "gemini-2.5-flash";
   const supportedModels = apiKeyStatus?.supportedModels ?? [
-    "gemini-2.5-flash",
+    "gemini-3.1-pro",
+    "gemini-3-flash",
+    "gemini-3.1-flash-lite",
     "gemini-2.5-pro",
+    "gemini-2.5-flash",
     "gemini-2.5-flash-lite",
+    "gemini-flash-latest",
   ];
   const modelSource = apiKeyStatus?.modelSource ?? "default";
 
   return (
     <Panel
       title="Repository Context"
-      subtitle="GitRoast only reads staged Git changes from the directory that launched the app."
+      subtitle="GitRoast reads staged Git changes from the selected repo root or the directory that launched the app."
       aside={
         <div className="panel-actions">
           <StatusPill tone={tone}>{contextLabel(viewState)}</StatusPill>
+          <button
+            className="button-ghost"
+            type="button"
+            disabled={booting || refreshingRepo}
+            onClick={() => {
+              void onChooseRepo();
+            }}
+          >
+            Choose repo
+          </button>
           <button
             className="button-ghost"
             type="button"
@@ -94,6 +112,10 @@ export function RepoSummary({
       ) : null}
 
       <div className="fact-list">
+        <div className="fact-row">
+          <span className="fact-label">Launch path</span>
+          <span className="fact-value">{launchPath || "Not set"}</span>
+        </div>
         <div className="fact-row">
           <span className="fact-label">Repository</span>
           <span className="fact-value">{repoName}</span>
@@ -127,11 +149,11 @@ export function RepoSummary({
           <span className="fact-value">{modelSource}</span>
         </div>
         <div className="fact-row">
-          <span className="fact-label">Model override keys</span>
-          <span className="fact-value">GITROAST_GEMINI_MODEL, GEMINI_MODEL</span>
+          <span className="fact-label">Model storage</span>
+          <span className="fact-value">GitRoast app config</span>
         </div>
         <div className="fact-row">
-          <span className="fact-label">Supported models</span>
+          <span className="fact-label">Preset models</span>
           <span className="fact-value">{supportedModels.join(", ")}</span>
         </div>
       </div>

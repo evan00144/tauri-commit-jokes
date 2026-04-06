@@ -8,7 +8,7 @@ The blueprint assumes:
 - Tauri backend in Rust
 - React + Vite frontend
 - CLI launch from the current working directory only
-- Gemini 2.5 Flash as the only AI provider
+- Gemini as the only AI provider
 
 ## Proposed Repository Tree
 
@@ -57,7 +57,7 @@ Shared presentational components such as buttons, panels, status banners, loader
 
 ### `src/features/onboarding/`
 
-Owns API key capture, validation status messaging, and the `missing_api_key` flow.
+Owns env-setup guidance, validation status messaging, model selection, and the `missing_api_key` flow.
 
 ### `src/features/repo-status/`
 
@@ -94,7 +94,7 @@ Gemini request builder, fixed prompt handling, response parsing, timeout behavio
 
 ### `src-tauri/src/secure_store/`
 
-OS-backed credential storage helpers for saving, retrieving, replacing, and checking Gemini API key state.
+Environment lookup helpers for detecting Gemini API key from `.env.local`, `.env`, or inherited shell env, plus non-secret model preference resolution from app config.
 
 ### `src-tauri/src/models/`
 
@@ -152,41 +152,35 @@ type RepoStatusResult = {
 };
 ```
 
-### `save_api_key(apiKey: string) -> SaveApiKeyResult`
-
-Purpose:
-- store the Gemini API key securely
-- return non-secret status only
-
-Suggested shape:
-
-```ts
-type SaveApiKeyResult = {
-  success: boolean;
-  providerName: "gemini";
-  modelName: "gemini-2.5-flash";
-  keyStatus: "saved" | "invalid" | "error";
-  errorCode: string | null;
-};
-```
-
 ### `get_api_key_status() -> ApiKeyStatusResult`
 
 Purpose:
-- expose whether a usable key exists without returning the secret
+- expose whether a usable env-based key exists without returning the secret
+- expose the active app-config model and preset choices
 
 Suggested shape:
 
 ```ts
 type ApiKeyStatusResult = {
   providerName: "gemini";
-  modelName: "gemini-2.5-flash";
+  modelName: string;
+  modelSource: string;
+  modelWarning: string | null;
+  supportedModels: string[];
+  acceptedKeyNames: string[];
   keyPresent: boolean;
   keyStatus: "missing" | "saved" | "valid" | "invalid";
+  keySource: string | null;
   lastValidatedAt: string | null;
   errorCode: string | null;
 };
 ```
+
+### `set_model_preference(modelName: string) -> ApiKeyStatusResult`
+
+Purpose:
+- persist a non-secret Gemini model preference in app config
+- return the refreshed credential and model status payload
 
 ### `generate_commit_message(repoRoot: string) -> GenerateCommitMessageResult`
 
@@ -249,8 +243,8 @@ The app should normalize all runtime behavior into these states:
 ### State Meaning
 
 `missing_api_key`
-- shown when no Gemini key is stored
-- primary action: save API key
+- shown when no Gemini key is detected
+- primary action: add env vars and refresh
 
 `invalid_launch_context`
 - shown when the app is not launched from a valid repo or Git is unavailable
@@ -285,15 +279,16 @@ The app should normalize all runtime behavior into these states:
 5. If Git is unavailable or the directory is not in a repo, show `invalid_launch_context`.
 6. If repo context is valid, frontend calls `get_api_key_status()`.
 7. If key is missing, show `missing_api_key`.
-8. After key is present, frontend calls `get_repo_status(repoRoot)`.
-9. If no staged changes exist, show `no_staged_changes`.
-10. If repo and key checks pass, show `ready_to_generate`.
-11. User clicks `Generate`.
-12. Frontend calls `generate_commit_message(repoRoot)`.
-13. Backend reads the staged diff, enforces size limits, builds the fixed Gemini prompt, and submits the request.
-14. On success, show `generation_success` with one message.
-15. User clicks `Copy`.
-16. Clipboard action completes and the user finishes the commit outside the app.
+8. User can adjust the active Gemini model in settings, which persists to app config.
+9. After key is present, frontend calls `get_repo_status(repoRoot)`.
+10. If no staged changes exist, show `no_staged_changes`.
+11. If repo and key checks pass, show `ready_to_generate`.
+12. User clicks `Generate`.
+13. Frontend calls `generate_commit_message(repoRoot)`.
+14. Backend reads the staged diff, enforces size limits, builds the fixed Gemini prompt, and submits the request.
+15. On success, show `generation_success` with one message.
+16. User clicks `Copy`.
+17. Clipboard action completes and the user finishes the commit outside the app.
 
 ## Fixed MVP Contracts
 
@@ -301,7 +296,7 @@ The app should normalize all runtime behavior into these states:
 
 - Entrypoint name: `gitroast`
 - Launch mode: current working directory only
-- No manual folder selection in MVP
+- In-app repo switching is allowed after launch
 
 ### Git Contract
 
@@ -312,7 +307,7 @@ The app should normalize all runtime behavior into these states:
 ### AI Contract
 
 - Provider: Google AI Studio
-- Model: `gemini-2.5-flash`
+- Model: app-selected Gemini model, default `gemini-2.5-flash`
 - Input: fixed prompt plus staged diff
 - Output: one humorous commit message string
 

@@ -1,6 +1,5 @@
 use std::{
-    fs,
-    io,
+    fs, io,
     path::{Path, PathBuf},
 };
 
@@ -9,15 +8,18 @@ use thiserror::Error;
 
 pub const PROVIDER_NAME: &str = "gemini";
 pub const DEFAULT_MODEL_NAME: &str = "gemini-2.5-flash";
-pub const SUPPORTED_MODEL_NAMES: [&str; 3] = [
-    "gemini-2.5-flash",
+pub const MODEL_PRESET_NAMES: [&str; 7] = [
+    "gemini-3.1-pro",
+    "gemini-3-flash",
+    "gemini-3.1-flash-lite",
     "gemini-2.5-pro",
+    "gemini-2.5-flash",
     "gemini-2.5-flash-lite",
+    "gemini-flash-latest",
 ];
 pub const PROMPT_VERSION: &str = "v2";
 pub const DIFF_BYTE_LIMIT: usize = 250 * 1024;
 pub const ENV_KEY_NAMES: [&str; 2] = ["GEMINI_API_KEY", "GOOGLE_API_KEY"];
-pub const ENV_MODEL_NAMES: [&str; 2] = ["GITROAST_GEMINI_MODEL", "GEMINI_MODEL"];
 
 #[derive(Debug, Error)]
 pub enum AppError {
@@ -195,7 +197,7 @@ pub struct ResolvedModel {
 
 impl ResolvedModel {
     pub fn supported_models() -> Vec<String> {
-        SUPPORTED_MODEL_NAMES
+        MODEL_PRESET_NAMES
             .iter()
             .map(|value| (*value).to_string())
             .collect()
@@ -226,7 +228,10 @@ impl ApiKeyStatusResult {
             model_source: model.model_source.clone(),
             model_warning: model.model_warning.clone(),
             supported_models: ResolvedModel::supported_models(),
-            accepted_key_names: ENV_KEY_NAMES.iter().map(|value| (*value).to_string()).collect(),
+            accepted_key_names: ENV_KEY_NAMES
+                .iter()
+                .map(|value| (*value).to_string())
+                .collect(),
             key_present,
             key_status: if key_present {
                 config.key_status.as_str().into()

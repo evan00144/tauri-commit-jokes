@@ -21,7 +21,7 @@ type GeneratorPanelProps = {
 function renderStateCopy(viewState: ViewState) {
   switch (viewState) {
     case "missing_api_key":
-      return "Save your Gemini API key in settings to unlock generation.";
+      return "Add your Gemini API key to `.env.local`, `.env`, or shell env to unlock generation.";
     case "invalid_launch_context":
       return "Launch GitRoast from a repository so it can read the staged diff.";
     case "no_staged_changes":

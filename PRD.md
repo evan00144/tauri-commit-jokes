@@ -41,7 +41,8 @@ The first version assumes the user already understands:
 - Launch the app from the current working directory
 - Verify that the directory is a Git repository
 - Read staged changes using Git
-- Let the user store their own API key securely on their machine
+- Let the user configure their own API key through environment variables
+- Let the user select a Gemini model in app settings
 - Generate one humorous commit message from the staged diff
 - Show the result in the UI
 - Copy the result to the clipboard
@@ -65,7 +66,7 @@ The first version assumes the user already understands:
 2. User runs `gitroast` from that repository directory.
 3. The app opens and uses the launch directory as its repo context.
 4. The app checks whether the directory is a valid Git repository.
-5. If the user has not configured an API key yet, the app prompts them to add one.
+5. If the user has not configured an API key yet, the app tells them which env variables to add.
 6. The app checks whether staged changes exist.
 7. The user clicks `Generate`.
 8. The app reads `git diff --staged`.
@@ -80,6 +81,7 @@ The first version assumes the user already understands:
 - The app must accept a directory context when launched from the CLI.
 - The app must treat that directory as the active project scope.
 - The app must verify the directory belongs to a Git repository before enabling generation.
+- The app may let the user switch to another repository root from inside the UI.
 - The app must surface the detected repository name or path in the UI.
 
 ### 6.2 Staged Diff Reader
@@ -93,15 +95,18 @@ The first version assumes the user already understands:
 
 - The MVP supports one AI provider only.
 - The app must use a fixed internal prompt that asks for one humorous commit message based on the staged diff.
+- The app must default to `gemini-2.5-flash`.
+- The app must persist the selected model in app-managed config.
+- The app must offer a preset list of Gemini models and allow a custom Gemini model string.
 - The app must return a single result, not a list of alternatives.
 - The result should be short enough to function as a real commit message.
 
 ### 6.4 API Key Management
 
 - The user must provide their own API key.
-- The app must store the key locally using secure OS-backed storage where available.
+- The app must read the key from `.env.local`, `.env`, or inherited shell env.
 - The app must not require user login or cloud account creation.
-- The app must allow the user to update or remove the stored key.
+- The app must not persist raw secrets in app-managed storage.
 
 ### 6.5 Result Handling
 
@@ -119,7 +124,8 @@ The first version assumes the user already understands:
 
 ### Security
 
-- API keys must not be stored in plain text config files if secure storage is available.
+- The app must not write raw API keys into app-managed config or databases.
+- The app may write non-secret model preferences into app-managed config.
 - The app must keep all repository inspection local except for the diff content sent to the chosen AI provider.
 - The app must not execute `git commit` in MVP.
 
@@ -149,7 +155,8 @@ The interface should be minimal and focused. The main screen should include:
 - loading state during generation
 - generated commit message area
 - `Copy` button
-- access to API key settings
+- setup guidance for supported env variable names
+- model picker and active-model display
 
 The visual style can still be playful, but the product should prioritize clarity over decoration in v1.
 
@@ -167,7 +174,8 @@ The visual style can still be playful, but the product should prioritize clarity
   - validating Git repository state
   - executing Git commands
   - reading and returning staged diff data
-  - accessing secure local storage for the API key
+  - resolving env-based API key configuration
+  - reading and persisting non-secret model preference
 
 ### Frontend
 

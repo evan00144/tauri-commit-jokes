@@ -85,6 +85,14 @@ Choose a visibly different angle from your previous attempt.\n\n"
         ""
     };
 
+    let multi_change_guard = if extract_changed_files(diff).len() > 1 {
+        "The staged diff touches multiple files.\n\
+Do not tunnel on only one tiny edit.\n\
+Hint at both changes or summarize the combined chaos.\n\n"
+    } else {
+        ""
+    };
+
     format!(
         "You are GitRoast, a commit message generator with intentionally bad taste.\n\
 Write one commit message that a slightly mean developer would actually keep because it is accurate and funny.\n\n\
@@ -125,6 +133,7 @@ Good examples:\n\
 - enlarge the theme badge so dark mode can keep screaming from the back row\n\
 - tweak the ui copy until it sounds confident enough to fool product\n\
 - give the badge more presence like it just got promoted over engineering\n\n\
+{multi_change_guard}\
 {quality_block}\
 Staged diff:\n{diff}"
         ,
@@ -207,12 +216,7 @@ fn is_generic_message(value: &str) -> bool {
     }
 
     let weak_phrases = [
-        "update",
-        "changes",
-        "stuff",
-        "improve",
-        "cleanup",
-        "refactor",
+        "update", "changes", "stuff", "improve", "cleanup", "refactor",
     ];
 
     let weak_hits = weak_phrases
@@ -256,36 +260,9 @@ fn normalize_signal(token: &str) -> Option<String> {
     let trimmed = lower.trim_matches(|c: char| !c.is_ascii_alphanumeric());
 
     let is_noise = [
-        "users",
-        "evan",
-        "projects",
-        "src",
-        "tauri",
-        "ts",
-        "tsx",
-        "rs",
-        "md",
-        "json",
-        "bool",
-        "string",
-        "true",
-        "false",
-        "null",
-        "const",
-        "type",
-        "import",
-        "export",
-        "return",
-        "line",
-        "only",
-        "this",
-        "that",
-        "with",
-        "from",
-        "into",
-        "then",
-        "when",
-        "else",
+        "users", "evan", "projects", "src", "tauri", "ts", "tsx", "rs", "md", "json", "bool",
+        "string", "true", "false", "null", "const", "type", "import", "export", "return", "line",
+        "only", "this", "that", "with", "from", "into", "then", "when", "else",
     ];
 
     if trimmed.len() < 4 || is_noise.contains(&trimmed) {
@@ -333,7 +310,114 @@ fn extract_changed_files(diff: &str) -> Vec<String> {
     files
 }
 
-fn candidate_score(value: &str, signals: &[String]) -> i32 {
+fn extract_file_clusters(diff: &str) -> Vec<Vec<String>> {
+    let mut clusters: Vec<BTreeSet<String>> = Vec::new();
+    let mut current_cluster: Option<BTreeSet<String>> = None;
+
+    for line in diff.lines() {
+        if line.starts_with("diff --git ") {
+            if let Some(cluster) = current_cluster.take() {
+                if !cluster.is_empty() {
+                    clusters.push(cluster);
+                }
+            }
+            current_cluster = Some(BTreeSet::new());
+        }
+
+        let Some(cluster) = current_cluster.as_mut() else {
+            continue;
+        };
+
+        let interesting = line.starts_with("diff --git ")
+            || line.starts_with("+++ ")
+            || line.starts_with("--- ")
+            || line.starts_with('+')
+            || line.starts_with('-');
+
+        if !interesting {
+            continue;
+        }
+
+        for raw in line.split(|c: char| !c.is_ascii_alphanumeric() && c != '_') {
+            if let Some(token) = normalize_signal(raw) {
+                cluster.insert(token);
+            }
+        }
+    }
+
+    if let Some(cluster) = current_cluster.take() {
+        if !cluster.is_empty() {
+            clusters.push(cluster);
+        }
+    }
+
+    clusters
+        .into_iter()
+        .map(|cluster| cluster.into_iter().take(8).collect())
+        .collect()
+}
+
+fn extract_change_targets(diff: &str) -> Vec<Vec<String>> {
+    let lower = diff.to_lowercase();
+    let mut targets = Vec::new();
+
+    if lower.contains("servericon") && lower.contains("databaseicon") {
+        targets.push(vec![
+            "database".to_string(),
+            "server".to_string(),
+            "icon".to_string(),
+            "db".to_string(),
+        ]);
+    }
+
+    if lower.contains(">draft<") && lower.contains(">drafting<") {
+        targets.push(vec![
+            "draft".to_string(),
+            "drafting".to_string(),
+            "badge".to_string(),
+            "rebrand".to_string(),
+        ]);
+    }
+
+    if lower.contains("text-2xl") || lower.contains("gap-4") {
+        targets.push(vec![
+            "theme".to_string(),
+            "mode".to_string(),
+            "icon".to_string(),
+            "bigger".to_string(),
+            "supersize".to_string(),
+        ]);
+    }
+
+    if lower.contains("loginfo") || lower.contains("fetching layout backgrounds") {
+        targets.push(vec![
+            "log".to_string(),
+            "logging".to_string(),
+            "background".to_string(),
+            "service".to_string(),
+            "quiet".to_string(),
+        ]);
+    }
+
+    if lower.contains("|| false") {
+        targets.push(vec![
+            "false".to_string(),
+            "pagination".to_string(),
+            "background".to_string(),
+            "logic".to_string(),
+            "branch".to_string(),
+        ]);
+    }
+
+    targets
+}
+
+fn candidate_score(
+    value: &str,
+    signals: &[String],
+    file_clusters: &[Vec<String>],
+    change_targets: &[Vec<String>],
+) -> i32 {
     if is_generic_message(value) {
         return -100;
     }
@@ -349,7 +433,11 @@ fn candidate_score(value: &str, signals: &[String]) -> i32 {
         score += 8;
     }
 
-    if value.chars().next().is_some_and(|character| character.is_ascii_lowercase()) {
+    if value
+        .chars()
+        .next()
+        .is_some_and(|character| character.is_ascii_lowercase())
+    {
         score += 5;
     }
 
@@ -402,6 +490,29 @@ fn candidate_score(value: &str, signals: &[String]) -> i32 {
         .count() as i32
         * 4;
 
+    let covered_clusters = file_clusters
+        .iter()
+        .filter(|cluster| cluster.iter().any(|signal| lower.contains(signal)))
+        .count() as i32;
+
+    score += covered_clusters * 6;
+
+    if file_clusters.len() > 1 && covered_clusters <= 1 {
+        score -= 18;
+    }
+
+    let covered_targets = change_targets
+        .iter()
+        .filter(|target| target.iter().any(|signal| lower.contains(signal)))
+        .count() as i32;
+
+    score += covered_targets * 7;
+
+    if !change_targets.is_empty() {
+        let missed_targets = change_targets.len() as i32 - covered_targets;
+        score -= missed_targets.max(0) * 5;
+    }
+
     let sarcasm_shapes = [
         " because ",
         " apparently ",
@@ -445,7 +556,10 @@ fn candidate_score(value: &str, signals: &[String]) -> i32 {
 fn extract_added_phrases(diff: &str) -> Vec<String> {
     let mut phrases = Vec::new();
 
-    for line in diff.lines().filter(|line| line.starts_with('+') && !line.starts_with("+++")) {
+    for line in diff
+        .lines()
+        .filter(|line| line.starts_with('+') && !line.starts_with("+++"))
+    {
         let quote_slices = line.matches('"').count();
         if quote_slices >= 2 {
             let mut parts = line.split('"');
@@ -462,11 +576,41 @@ fn extract_added_phrases(diff: &str) -> Vec<String> {
     phrases
 }
 
+fn extract_compact_fragments(diff: &str) -> Vec<String> {
+    let lower = diff.to_lowercase();
+    let mut fragments = Vec::new();
+
+    if lower.contains("servericon") && lower.contains("databaseicon") {
+        fragments.push("swap the db icon".to_string());
+    }
+
+    if lower.contains(">draft<") && lower.contains(">drafting<") {
+        fragments.push("promote Draft to Drafting".to_string());
+    }
+
+    if lower.contains("text-2xl") || lower.contains("gap-4") {
+        fragments.push("supersize the theme glyph".to_string());
+    }
+
+    if lower.contains("loginfo") || lower.contains("fetching layout backgrounds") {
+        fragments.push("muzzle the background logs".to_string());
+    }
+
+    if lower.contains("|| false") {
+        fragments.push("slip || false into pagination".to_string());
+    }
+
+    fragments
+}
+
 fn build_fallback_roast(diff: &str, signals: &[String], generation_nonce: u32) -> String {
     let lower_diff = diff.to_lowercase();
     let changed_files = extract_changed_files(diff);
     let added_phrases = extract_added_phrases(diff);
-    let touched_app = changed_files.iter().any(|path| path.ends_with("src/app/App.tsx"));
+    let compact_fragments = extract_compact_fragments(diff);
+    let touched_app = changed_files
+        .iter()
+        .any(|path| path.ends_with("src/app/App.tsx"));
     let touched_credential_panel = lower_diff.contains("credential status")
         || lower_diff.contains("gemini env source")
         || lower_diff.contains("apikeyform")
@@ -475,119 +619,249 @@ fn build_fallback_roast(diff: &str, signals: &[String], generation_nonce: u32) -
     let touched_removal = diff.lines().filter(|line| line.starts_with('-')).count() > 10;
 
     let touched_env = lower_diff.contains(".env")
-        || signals.iter().any(|signal| ["env", "gemini", "google", "apikey", "key"].contains(&signal.as_str()));
+        || signals
+            .iter()
+            .any(|signal| ["env", "gemini", "google", "apikey", "key"].contains(&signal.as_str()));
     let touched_refresh = signals.iter().any(|signal| {
         ["refresh", "staged", "repo", "status", "focus", "visibility"].contains(&signal.as_str())
     });
     let touched_prompt = signals.iter().any(|signal| {
-        ["prompt", "joke", "roast", "generate", "generator", "candidate"].contains(&signal.as_str())
+        [
+            "prompt",
+            "joke",
+            "roast",
+            "generate",
+            "generator",
+            "candidate",
+        ]
+        .contains(&signal.as_str())
     });
     let touched_docs = signals
         .iter()
         .any(|signal| ["readme", "example", "docs"].contains(&signal.as_str()));
+    let touched_logging = signals.iter().any(|signal| {
+        [
+            "loginfo",
+            "logging",
+            "fetching",
+            "backgrounds",
+            "service",
+            "layoutbackgroundservice",
+        ]
+        .contains(&signal.as_str())
+    });
     let touched_badge = signals.iter().any(|signal| {
-        ["badge", "draft", "drafting", "theme", "mode", "indicator", "label"].contains(&signal.as_str())
+        [
+            "badge",
+            "draft",
+            "drafting",
+            "theme",
+            "mode",
+            "indicator",
+            "label",
+        ]
+        .contains(&signal.as_str())
     });
     let touched_ui = signals.iter().any(|signal| {
-        ["button", "badge", "theme", "indicator", "copy", "modal", "drawer", "label"].contains(&signal.as_str())
+        [
+            "button",
+            "badge",
+            "theme",
+            "indicator",
+            "copy",
+            "modal",
+            "drawer",
+            "label",
+        ]
+        .contains(&signal.as_str())
     });
 
     let mut variants: Vec<String> = Vec::new();
 
-    if touched_badge {
+    if compact_fragments.len() >= 3 {
+        let a = &compact_fragments[0];
+        let b = &compact_fragments[1];
+        let c = &compact_fragments[2];
         variants.extend([
-            "rename draft to drafting because apparently the badge wanted a rebrand",
-            "make the draft badge sound busier so product can feel momentum",
-            "inflate the theme badge until it can be seen from the last standup",
-            "rename the badge and make it louder like it just discovered stakeholder feedback",
-        ].into_iter().map(str::to_string));
+            format!("{a}, {b}, and {c} because subtlety was already dead"),
+            format!("{a}, {b}, then {c} like the sprint needed worse ideas"),
+            format!("{a} while {b}; also {c} because apparently chaos scales"),
+        ]);
+    }
+
+    if compact_fragments.len() >= 2 {
+        let a = &compact_fragments[0];
+        let b = &compact_fragments[1];
+        variants.extend([
+            format!("{a} and {b} because one bad idea clearly wasn't enough"),
+            format!("{a} while {b} like the release train needed more drama"),
+            format!("{a} and {b} for the full \"who approved this\" bundle"),
+        ]);
+    }
+
+    if touched_badge {
+        variants.extend(
+            [
+                "rename draft to drafting because apparently the badge wanted a rebrand",
+                "make the draft badge sound busier so product can feel momentum",
+                "inflate the theme badge until it can be seen from the last standup",
+                "rename the badge and make it louder like it just discovered stakeholder feedback",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        );
     }
 
     if touched_ui {
+        variants.extend(
+            [
+                "tune the ui copy until it sounds confident enough to fool product",
+                "massage the interface wording like the sprint review depends on the vibes",
+                "make the badge bigger because subtlety was clearly blocking shipping",
+                "give the theme indicator more presence like it just got promoted over engineering",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        );
+    }
+
+    if touched_badge && touched_logging {
         variants.extend([
-            "tune the ui copy until it sounds confident enough to fool product",
-            "massage the interface wording like the sprint review depends on the vibes",
-            "make the badge bigger because subtlety was clearly blocking shipping",
-            "give the theme indicator more presence like it just got promoted over engineering",
+            "swap the fake server icon and quietly bury one more background log line",
+            "fix the db badge and gag the layout background logs before they say too much",
+            "rebrand the disconnected badge and delete one more nervous background service confession",
         ].into_iter().map(str::to_string));
+    }
+
+    if touched_logging {
+        variants.extend(
+            [
+                "delete the layout background log like the service finally learned shame",
+                "quiet the background service before one more debug line escapes to production",
+                "muzzle the layout background logs because apparently silence is a feature now",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        );
     }
 
     if let Some(phrase) = added_phrases.first() {
-        variants.extend([
-            "ship the new label because apparently {phrase} tested well with the badge ego",
-            "teach the ui to say {phrase} like it means it this time",
-            "swap in {phrase} so the copy can sound important for once",
-        ].into_iter().map(|template| template.replace("{phrase}", phrase)));
+        variants.extend(
+            [
+                "ship the new label because apparently {phrase} tested well with the badge ego",
+                "teach the ui to say {phrase} like it means it this time",
+                "swap in {phrase} so the copy can sound important for once",
+            ]
+            .into_iter()
+            .map(|template| template.replace("{phrase}", phrase)),
+        );
     }
 
     if touched_app && touched_credential_panel && touched_removal {
-        variants.extend([
-            "rip out the key status sidebar and let the main screen breathe again",
-            "delete the credential guilt panel before it judges one more commit",
-            "stop wasting pixels on API key drama and trim the App shell",
-            "cut the credential sidebar so GitRoast can focus on the actual roast",
-        ].into_iter().map(str::to_string));
+        variants.extend(
+            [
+                "rip out the key status sidebar and let the main screen breathe again",
+                "delete the credential guilt panel before it judges one more commit",
+                "stop wasting pixels on API key drama and trim the App shell",
+                "cut the credential sidebar so GitRoast can focus on the actual roast",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        );
     }
 
     if touched_env && touched_refresh && touched_prompt {
-        variants.extend([
-            "drag GitRoast into project env and bully Gemini into better jokes",
-            "make repo refresh, env lookup, and joke quality fight in one commit",
-            "teach GitRoast to read .env and stop serving sedated one-liners",
-        ].into_iter().map(str::to_string));
+        variants.extend(
+            [
+                "drag GitRoast into project env and bully Gemini into better jokes",
+                "make repo refresh, env lookup, and joke quality fight in one commit",
+                "teach GitRoast to read .env and stop serving sedated one-liners",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        );
     }
 
     if touched_env && touched_refresh {
-        variants.extend([
-            "make GitRoast notice staged reality and steal its key from .env",
-            "refresh repo state and stop making users babysit secret handling",
-        ].into_iter().map(str::to_string));
+        variants.extend(
+            [
+                "make GitRoast notice staged reality and steal its key from .env",
+                "refresh repo state and stop making users babysit secret handling",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        );
     }
 
     if touched_env && touched_prompt {
-        variants.extend([
-            "move Gemini secrets to .env and shame the joke engine into specifics",
-            "kick API key prompts out of the app and roast with project env instead",
-        ].into_iter().map(str::to_string));
+        variants.extend(
+            [
+                "move Gemini secrets to .env and shame the joke engine into specifics",
+                "kick API key prompts out of the app and roast with project env instead",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        );
     }
 
     if touched_refresh && touched_prompt {
-        variants.extend([
-            "make GitRoast notice staged files before Gemini embarrasses itself again",
-            "refresh the repo before the joke engine hallucinates another commit line",
-        ].into_iter().map(str::to_string));
+        variants.extend(
+            [
+                "make GitRoast notice staged files before Gemini embarrasses itself again",
+                "refresh the repo before the joke engine hallucinates another commit line",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        );
     }
 
     if touched_env {
-        variants.extend([
-            "stop begging for API keys and read the room from .env instead",
-            "let .env carry the secret so the UI can stop acting desperate",
-        ].into_iter().map(str::to_string));
+        variants.extend(
+            [
+                "stop begging for API keys and read the room from .env instead",
+                "let .env carry the secret so the UI can stop acting desperate",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        );
     }
 
     if touched_refresh {
-        variants.extend([
-            "teach GitRoast to refresh before hallucinating repo status again",
-            "make the staged diff refresh like it finally respects the user",
-        ].into_iter().map(str::to_string));
+        variants.extend(
+            [
+                "teach GitRoast to refresh before hallucinating repo status again",
+                "make the staged diff refresh like it finally respects the user",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        );
     }
 
     if touched_prompt {
-        variants.extend([
-            "bully the commit joke prompt until it stops sounding half-conscious",
-            "force the roast generator to produce something less medically concerning",
-        ].into_iter().map(str::to_string));
+        variants.extend(
+            [
+                "bully the commit joke prompt until it stops sounding half-conscious",
+                "force the roast generator to produce something less medically concerning",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        );
     }
 
     if touched_docs {
-        variants.extend([
-            "document the chaos so future-you knows why GitRoast behaves like this",
-            "write down the weird parts before the next refactor pretends this was obvious",
-        ].into_iter().map(str::to_string));
+        variants.extend(
+            [
+                "document the chaos so future-you knows why GitRoast behaves like this",
+                "write down the weird parts before the next refactor pretends this was obvious",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        );
     }
 
     if variants.is_empty() {
-        variants.push("roast the staged diff with slightly more dignity than last time".to_string());
+        variants
+            .push("roast the staged diff with slightly more dignity than last time".to_string());
     }
 
     variants[(generation_nonce as usize) % variants.len()].clone()
@@ -602,8 +876,9 @@ async fn request_candidates(
     generation_nonce: u32,
 ) -> Result<Vec<String>, AppError> {
     let prompt = build_prompt_with_nonce(diff, retry_mode, generation_nonce);
-    let endpoint =
-        format!("https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent");
+    let endpoint = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+    );
 
     let response = client
         .post(endpoint)
@@ -710,9 +985,11 @@ pub async fn generate_commit_message(
         .map_err(|error| AppError::Provider(error.to_string()))?;
 
     let signals = extract_diff_signals(diff);
+    let file_clusters = extract_file_clusters(diff);
+    let change_targets = extract_change_targets(diff);
     let fallback = build_fallback_roast(diff, &signals, generation_nonce);
     let mut best_message = fallback.clone();
-    let mut best_score = candidate_score(&fallback, &signals);
+    let mut best_score = candidate_score(&fallback, &signals, &file_clusters, &change_targets);
 
     for retry_mode in [false, true] {
         let candidates = request_candidates(
@@ -726,7 +1003,7 @@ pub async fn generate_commit_message(
         .await?;
 
         for candidate in candidates {
-            let score = candidate_score(&candidate, &signals);
+            let score = candidate_score(&candidate, &signals, &file_clusters, &change_targets);
             if score > best_score {
                 best_score = score;
                 best_message = candidate;

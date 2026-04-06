@@ -1,8 +1,7 @@
 use std::{env, fs, path::Path};
 
 use crate::models::{
-    AppError, DEFAULT_MODEL_NAME, ENV_KEY_NAMES, ENV_MODEL_NAMES, ResolvedModel,
-    SUPPORTED_MODEL_NAMES,
+    load_app_config, AppError, ResolvedModel, DEFAULT_MODEL_NAME, ENV_KEY_NAMES, MODEL_PRESET_NAMES,
 };
 
 fn strip_wrapping_quotes(value: &str) -> String {
@@ -75,20 +74,29 @@ pub fn read_api_key(repo_root: &Path) -> Result<(String, String), AppError> {
     Err(AppError::MissingApiKey)
 }
 
-pub fn read_model(repo_root: &Path) -> Result<ResolvedModel, AppError> {
-    let Some((requested_model, source)) = read_env_value(repo_root, &ENV_MODEL_NAMES)? else {
+pub fn read_model() -> Result<ResolvedModel, AppError> {
+    let config = load_app_config().unwrap_or_default();
+    let requested_model = config.model_name.trim();
+
+    if requested_model.is_empty() {
         return Ok(ResolvedModel {
             model_name: DEFAULT_MODEL_NAME.into(),
             model_source: "default".into(),
             model_warning: None,
         });
-    };
+    }
 
-    if SUPPORTED_MODEL_NAMES.contains(&requested_model.as_str()) {
+    if requested_model.starts_with("gemini") {
         return Ok(ResolvedModel {
-            model_name: requested_model,
-            model_source: source,
-            model_warning: None,
+            model_name: requested_model.into(),
+            model_source: "app config".into(),
+            model_warning: if MODEL_PRESET_NAMES.contains(&requested_model) {
+                None
+            } else {
+                Some(format!(
+                    "Using custom Gemini model `{requested_model}` from app config."
+                ))
+            },
         });
     }
 
@@ -96,7 +104,7 @@ pub fn read_model(repo_root: &Path) -> Result<ResolvedModel, AppError> {
         model_name: DEFAULT_MODEL_NAME.into(),
         model_source: "default".into(),
         model_warning: Some(format!(
-            "Unsupported model `{requested_model}` from {source}. Falling back to {DEFAULT_MODEL_NAME}."
+            "Configured model `{requested_model}` is not a Gemini model. Falling back to {DEFAULT_MODEL_NAME}."
         )),
     })
 }

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import type {
   ApiKeyStatusResult,
   GenerateCommitMessageResult,
@@ -14,8 +15,16 @@ export function getRepoStatus(repoRoot: string) {
   return invoke<RepoStatusResult>("get_repo_status", { repoRoot });
 }
 
-export function getApiKeyStatus() {
-  return invoke<ApiKeyStatusResult>("get_api_key_status");
+export function chooseRepoRoot() {
+  return invoke<string | null>("choose_repo_root");
+}
+
+export function getApiKeyStatus(cwd: string) {
+  return invoke<ApiKeyStatusResult>("get_api_key_status", { cwd });
+}
+
+export function setModelPreference(cwd: string, modelName: string) {
+  return invoke<ApiKeyStatusResult>("set_model_preference", { cwd, modelName });
 }
 
 export function generateCommitMessage(repoRoot: string, generationNonce: number) {
@@ -23,4 +32,8 @@ export function generateCommitMessage(repoRoot: string, generationNonce: number)
     repoRoot,
     generationNonce,
   });
+}
+
+export function openExternal(url: string) {
+  return openUrl(url);
 }

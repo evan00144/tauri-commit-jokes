@@ -25,6 +25,7 @@ pub fn run() {
     let launch_cwd_for_setup = launch_cwd.clone();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .manage(LaunchContext { cwd: launch_cwd })
         .setup(move |app| {
             if let Some(window) = app.get_webview_window("main") {
@@ -40,8 +41,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::init_context,
+            commands::choose_repo_root,
             commands::get_repo_status,
             commands::get_api_key_status,
+            commands::set_model_preference,
             commands::generate_commit_message
         ])
         .run(tauri::generate_context!())

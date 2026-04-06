@@ -44,28 +44,13 @@ pnpm install
 export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
-3. Launch the app and save your Gemini key in Settings.
-
-GitRoast stores the key in the OS keychain and uses it across repositories.
-
-Optional env fallback is still supported:
+3. Add a Gemini key to the current repository environment:
 
 ```bash
 cp .env.example .env.local
 ```
 
-Then edit `.env.local` and replace the placeholder value with your real Gemini API key if you prefer env-based local configuration. You can also set the model there, but the in-app model selector now acts as the primary packaged-app workflow.
-
-Supported model env keys:
-
-- `GITROAST_GEMINI_MODEL`
-- `GEMINI_MODEL`
-
-Supported model values:
-
-- `gemini-2.5-flash`
-- `gemini-2.5-pro`
-- `gemini-2.5-flash-lite`
+Then edit `.env.local` and replace the placeholder value with your real Gemini API key. GitRoast reads `.env.local`, then `.env`, then inherited shell env.
 
 4. Launch the app for the current repository:
 
@@ -85,9 +70,11 @@ pnpm tauri:build
 ## MVP Notes
 
 - Only staged changes are read.
-- Supported Gemini models are `gemini-2.5-flash`, `gemini-2.5-pro`, and `gemini-2.5-flash-lite`.
-- API keys are primarily stored in the OS keychain, with `.env.local`, `.env`, and shell env as fallback.
-- Model selection is primarily stored in app settings, with `.env.local`, `.env`, and shell env as fallback.
+- API keys are read from `.env.local`, `.env`, or inherited shell env.
+- Model selection is stored in GitRoast app config, with `gemini-2.5-flash` as the default.
+- The app ships with Gemini presets for `gemini-3.1-pro`, `gemini-3-flash`, `gemini-3.1-flash-lite`, `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-2.5-flash-lite`, and `gemini-flash-latest`.
+- You can also save any custom Gemini model string in the app settings if Google exposes a newer model before GitRoast updates its preset list.
+- The app does not store secrets in keychain or app-managed local databases.
 - Model availability still depends on your Gemini project quota and billing tier.
 - The app never auto-commits in MVP.
 - The frontend owns clipboard copy behavior.

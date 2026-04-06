@@ -53,7 +53,7 @@ The MVP should answer these business questions:
 2. The user runs `gitroast` from that repository directory.
 3. The app opens already scoped to the current repository.
 4. The app checks Git availability, repository validity, and staged-change presence.
-5. If needed, the app asks the user to provide a Gemini API key.
+5. If needed, the app instructs the user to add a Gemini API key via `.env.local`, `.env`, or shell env.
 6. The user clicks `Generate`.
 7. The app generates one concise humorous commit message from the staged diff.
 8. The user clicks `Copy`.
@@ -75,19 +75,22 @@ Secondary signs of success:
 
 ## Functional Business Requirements
 
-- The product must use the current working directory as the repository launch context.
+- The product must use the current working directory as the default repository launch context.
 - The product must verify that the launch directory belongs to a Git repository.
+- The product may let the user switch to another repository root from inside the app.
 - The product must read staged Git changes only.
-- The product must use one AI provider for MVP: Google AI Studio with `gemini-2.5-flash`.
-- The product must let the user securely save their API key locally.
+- The product must use one AI provider for MVP: Google AI Studio Gemini.
+- The product must store the selected Gemini model in app config, defaulting to `gemini-2.5-flash`.
+- The product must expose a preset list of current Gemini text-generation models and allow a custom Gemini model string.
+- The product must read the API key from repo-local or shell environment variables instead of storing secrets inside the app.
 - The product must return one generated commit message at a time.
 - The product must provide a copy action as the final in-app step.
 
 ## Non-Functional Business Constraints
 
 - The app must feel local-first even though generation depends on an AI API call.
-- API key handling must be secure and must not rely on plain-text repo files.
-- Setup friction must stay low: one provider, one key, one launch flow.
+- API key handling must be transparent and easy to audit for open-source users.
+- Setup friction must stay low: one provider, one env contract for the API key, and one lightweight model preference.
 - Perceived startup must be fast enough that the tool feels lighter than opening a larger Git UI.
 
 ## Explicitly Out of Scope
@@ -95,7 +98,7 @@ Secondary signs of success:
 The following are not part of MVP:
 - auto-commit from the app
 - multi-provider support
-- folder picker or drag-and-drop repo selection
+- drag-and-drop repo selection
 - licensing and billing
 - premium personas or tone packs
 - cloud sync
@@ -113,9 +116,10 @@ The following are not part of MVP:
 ## MVP Exit Criteria
 
 The MVP is ready for implementation when the team agrees on:
-- CLI-only launch from the current repository
-- Gemini 2.5 Flash as the only provider/model
-- secure local API key storage
+- CLI-first launch from the current repository, with optional in-app repo switching
+- Gemini as the only provider
+- env-based API key detection
+- app-config model preference with `gemini-2.5-flash` as the default
 - copy-only completion flow with no in-app commit execution
 
 The MVP is ready for early validation when the app can complete the full loop:
