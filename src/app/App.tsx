@@ -9,8 +9,6 @@ import {
   getApiKeyStatus,
   getRepoStatus,
   initContext,
-  saveApiKey,
-  saveModel,
 } from "../lib/tauri";
 import type {
   ApiKeyStatusResult,
@@ -29,11 +27,9 @@ function describeError(errorCode: string | null): string {
     case "no_staged_changes":
       return "There are no staged changes yet. Run git add first, then generate again.";
     case "missing_api_key":
-      return "Save a Gemini API key in settings before generation is allowed.";
+      return "Add a Gemini API key to `.env.local`, `.env`, or shell env before generation is allowed.";
     case "invalid_api_key":
-      return "The saved Gemini API key was rejected. Replace it and try again.";
-    case "unsupported_model":
-      return "That model is not supported by GitRoast. Pick one from the supported list.";
+      return "The Gemini API key from your env was rejected. Replace it and try again.";
     case "quota_exhausted":
       return "The selected Gemini model is hitting quota limits for this project. Switch to gemini-2.5-flash or gemini-2.5-flash-lite, or wait for quota to reset.";
     case "diff_too_large":
@@ -53,8 +49,6 @@ export default function App() {
   const [refreshingRepo, setRefreshingRepo] = useState(false);
   const [generationNonce, setGenerationNonce] = useState(0);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
-  const [savingApiKey, setSavingApiKey] = useState(false);
-  const [savingModel, setSavingModel] = useState(false);
   const [repoContext, setRepoContext] = useState<RepoContextResult | null>(null);
   const [repoStatus, setRepoStatus] = useState<RepoStatusResult | null>(null);
   const [apiKeyStatus, setApiKeyStatus] = useState<ApiKeyStatusResult | null>(null);
@@ -218,48 +212,6 @@ export default function App() {
     setViewState("generation_error");
   }
 
-  async function handleSaveApiKey(apiKey: string) {
-    setSavingApiKey(true);
-    setInlineError(null);
-
-    try {
-      const result = await saveApiKey(apiKey.trim());
-      if (!result.success) {
-        setInlineError(describeError(result.errorCode));
-        return;
-      }
-
-      const nextKeyStatus = await getApiKeyStatus();
-      setApiKeyStatus(nextKeyStatus);
-
-      if (repoContext?.repoRoot) {
-        const status = await getRepoStatus(repoContext.repoRoot);
-        setRepoStatus(status);
-        setViewState(resolveViewState(nextKeyStatus, status));
-      }
-    } finally {
-      setSavingApiKey(false);
-    }
-  }
-
-  async function handleSaveModel(modelName: string) {
-    setSavingModel(true);
-    setInlineError(null);
-
-    try {
-      const result = await saveModel(modelName);
-      if (!result.success) {
-        setInlineError(describeError(result.errorCode));
-        return;
-      }
-
-      const nextKeyStatus = await getApiKeyStatus();
-      setApiKeyStatus(nextKeyStatus);
-    } finally {
-      setSavingModel(false);
-    }
-  }
-
   async function handleCopy() {
     if (!generation?.message) {
       return;
@@ -300,10 +252,6 @@ export default function App() {
               viewState={viewState}
               apiKeyStatus={apiKeyStatus}
               inlineError={viewState === "missing_api_key" ? generationError : null}
-              savingApiKey={savingApiKey}
-              savingModel={savingModel}
-              onSaveApiKey={handleSaveApiKey}
-              onSaveModel={handleSaveModel}
             />
           </div>
 
