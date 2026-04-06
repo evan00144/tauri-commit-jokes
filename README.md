@@ -96,6 +96,7 @@ The packaged Windows app can inspect staged changes inside WSL repositories when
 
 ```text
 \\wsl$\Ubuntu\home\evan\my-project
+\\wsl.localhost\Ubuntu\home\evan\my-project
 ```
 
 GitRoast detects that path shape and routes Git commands through `wsl.exe` instead of Windows Git.

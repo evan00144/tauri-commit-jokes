@@ -26,11 +26,13 @@ fn parse_wsl_unc_path(input: &str) -> Option<(String, String)> {
     let without_prefix = normalized.strip_prefix("\\\\")?;
     let lower = without_prefix.to_ascii_lowercase();
 
-    if !lower.starts_with("wsl$\\") {
+    let after_share = if lower.starts_with("wsl$\\") {
+        &without_prefix["wsl$\\".len()..]
+    } else if lower.starts_with("wsl.localhost\\") {
+        &without_prefix["wsl.localhost\\".len()..]
+    } else {
         return None;
-    }
-
-    let after_share = &without_prefix["wsl$\\".len()..];
+    };
     let mut parts = after_share.splitn(2, '\\');
     let distro = parts.next()?.trim();
 

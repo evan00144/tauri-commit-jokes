@@ -260,6 +260,52 @@ button {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.release-controls,
+.release-meta {
+  display: grid;
+  gap: 12px;
+}
+
+.release-assets {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.download-chip {
+  display: grid;
+  gap: 6px;
+  align-items: start;
+  min-height: 86px;
+  padding: 16px;
+  text-align: left;
+  color: #fff7ef;
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 189, 126, 0.08), rgba(255, 255, 255, 0.02)),
+    rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 224, 194, 0.08);
+}
+
+.download-chip:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 224, 194, 0.18);
+}
+
+.download-chip-title {
+  font-weight: 700;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.download-chip-meta {
+  color: rgba(255, 241, 228, 0.7);
+  font-size: 0.84rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
 .tutorial-card {
   position: relative;
   min-height: 168px;
@@ -594,7 +640,8 @@ button {
   }
 
   .hero-cta-grid,
-  .tutorial-grid {
+  .tutorial-grid,
+  .release-assets {
     grid-template-columns: 1fr;
   }
 

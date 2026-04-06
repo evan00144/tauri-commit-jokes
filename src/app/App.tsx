@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import "../App.css";
+import { ReleasePicker } from "../features/downloads/ReleasePicker";
 import { ApiKeyForm } from "../features/onboarding/ApiKeyForm";
 import { GeneratorPanel } from "../features/generator/GeneratorPanel";
 import { RepoSummary } from "../features/repo-status/RepoSummary";
@@ -350,6 +351,8 @@ export default function App() {
             ))}
           </div>
         </section>
+
+        <ReleasePicker onOpenExternal={handleOpenExternal} />
 
         <div className="grid">
           <div className="stack">
