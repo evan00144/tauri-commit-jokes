@@ -105,6 +105,20 @@ Practical usage:
 - use `Choose repo root` and pick the repo under `\\wsl$`
 - or launch the app from a Windows shell already pointed at the WSL UNC path
 
+### Windows + WSL API keys
+
+If you run the packaged Windows app against a WSL repo, remember that the app is still a Windows process.
+
+That means:
+- a Gemini key exported only inside your WSL shell is usually not visible to the Windows app
+- repo-local `.env.local` still works if it lives inside the chosen repo
+- the app also supports a session-only API key input in the UI if you do not want to write the key to disk
+
+The session key:
+- lives in memory only
+- is cleared when the app closes
+- is useful for Windows + WSL workflows where shell env inheritance is awkward
+
 ## Build
 
 ```bash

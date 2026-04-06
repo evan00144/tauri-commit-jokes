@@ -4,7 +4,7 @@ mod git;
 mod models;
 mod secure_store;
 
-use commands::LaunchContext;
+use commands::{AppState, LaunchContext};
 use tauri::Manager;
 
 fn parse_launch_cwd() -> Option<String> {
@@ -26,7 +26,9 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .manage(LaunchContext { cwd: launch_cwd })
+        .manage(AppState {
+            launch: LaunchContext { cwd: launch_cwd },
+        })
         .setup(move |app| {
             if let Some(window) = app.get_webview_window("main") {
                 let script = format!(
@@ -44,6 +46,8 @@ pub fn run() {
             commands::choose_repo_root,
             commands::get_repo_status,
             commands::get_api_key_status,
+            commands::set_session_api_key,
+            commands::clear_session_api_key,
             commands::set_model_preference,
             commands::generate_commit_message
         ])

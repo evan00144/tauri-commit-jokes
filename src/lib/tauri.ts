@@ -23,6 +23,14 @@ export function getApiKeyStatus(cwd: string) {
   return invoke<ApiKeyStatusResult>("get_api_key_status", { cwd });
 }
 
+export function setSessionApiKey(cwd: string, apiKey: string) {
+  return invoke<ApiKeyStatusResult>("set_session_api_key", { cwd, apiKey });
+}
+
+export function clearSessionApiKey(cwd: string) {
+  return invoke<ApiKeyStatusResult>("clear_session_api_key", { cwd });
+}
+
 export function setModelPreference(cwd: string, modelName: string) {
   return invoke<ApiKeyStatusResult>("set_model_preference", { cwd, modelName });
 }

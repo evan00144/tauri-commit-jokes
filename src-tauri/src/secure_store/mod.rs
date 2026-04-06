@@ -66,7 +66,7 @@ fn read_env_value(repo_root: &Path, names: &[&str]) -> Result<Option<(String, St
     Ok(None)
 }
 
-pub fn read_api_key(repo_root: &Path) -> Result<(String, String), AppError> {
+pub fn read_api_key_from_env(repo_root: &Path) -> Result<(String, String), AppError> {
     if let Some(api_key) = read_env_value(repo_root, &ENV_KEY_NAMES)? {
         return Ok(api_key);
     }
@@ -113,8 +113,8 @@ pub fn default_model_name() -> &'static str {
     DEFAULT_MODEL_NAME
 }
 
-pub fn has_api_key(repo_root: &Path) -> Result<Option<String>, AppError> {
-    match read_api_key(repo_root) {
+pub fn has_env_api_key(repo_root: &Path) -> Result<Option<String>, AppError> {
+    match read_api_key_from_env(repo_root) {
         Ok((_, source)) => Ok(Some(source)),
         Err(AppError::MissingApiKey) => Ok(None),
         Err(error) => Err(error),

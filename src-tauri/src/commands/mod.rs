@@ -1,4 +1,7 @@
-use std::path::Path;
+use std::{
+    path::Path,
+    sync::{Mutex, OnceLock},
+};
 
 use chrono::Utc;
 use rfd::FileDialog;
@@ -18,6 +21,12 @@ pub struct LaunchContext {
     pub cwd: Option<String>,
 }
 
+pub struct AppState {
+    pub launch: LaunchContext,
+}
+
+static SESSION_API_KEY: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
 fn active_launch_path(input: &str, launch: &LaunchContext) -> String {
     if input.trim().is_empty() {
         return launch.cwd.clone().unwrap_or_default();
@@ -31,11 +40,38 @@ fn repo_root_from_launch(launch: &LaunchContext) -> Option<std::path::PathBuf> {
     git::resolve_repo_root(launch_path).ok()
 }
 
-fn resolved_api_key_status(active_cwd: &str, launch: &LaunchContext) -> ApiKeyStatusResult {
+fn session_api_key_store() -> &'static Mutex<Option<String>> {
+    SESSION_API_KEY.get_or_init(|| Mutex::new(None))
+}
+
+fn read_session_api_key() -> Option<String> {
+    session_api_key_store()
+        .lock()
+        .ok()
+        .and_then(|value| value.as_ref().cloned())
+}
+
+fn read_api_key(repo_root: &Path) -> Result<(String, String), crate::models::AppError> {
+    if let Some(api_key) = read_session_api_key() {
+        return Ok((api_key, "session input".into()));
+    }
+
+    secure_store::read_api_key_from_env(repo_root)
+}
+
+fn has_api_key(repo_root: &Path) -> Result<Option<String>, crate::models::AppError> {
+    if read_session_api_key().is_some() {
+        return Ok(Some("session input".into()));
+    }
+
+    secure_store::has_env_api_key(repo_root)
+}
+
+fn resolved_api_key_status(active_cwd: &str, state: &AppState) -> ApiKeyStatusResult {
     let mut config = load_app_config().unwrap_or_default();
 
     let repo_root = if active_cwd.trim().is_empty() {
-        repo_root_from_launch(launch)
+        repo_root_from_launch(&state.launch)
     } else {
         git::resolve_repo_root(active_cwd).ok()
     };
@@ -54,7 +90,7 @@ fn resolved_api_key_status(active_cwd: &str, launch: &LaunchContext) -> ApiKeySt
         return ApiKeyStatusResult::from_config(&config, false, &resolved_model);
     };
 
-    match secure_store::has_api_key(&repo_root) {
+    match has_api_key(&repo_root) {
         Ok(Some(source)) => {
             if matches!(config.key_status, KeyStatus::Missing) {
                 config.key_status = KeyStatus::Saved;
@@ -82,8 +118,8 @@ pub fn choose_repo_root() -> Option<String> {
 }
 
 #[tauri::command]
-pub fn init_context(cwd: String, launch: State<'_, LaunchContext>) -> RepoContextResult {
-    let launch_path = active_launch_path(&cwd, &launch);
+pub fn init_context(cwd: String, state: State<'_, AppState>) -> RepoContextResult {
+    let launch_path = active_launch_path(&cwd, &state.launch);
 
     if launch_path.is_empty() {
         return RepoContextResult::invalid(launch_path, true, Some("not_a_repo"));
@@ -128,16 +164,50 @@ pub fn get_repo_status(repo_root: String) -> RepoStatusResult {
 }
 
 #[tauri::command]
-pub fn get_api_key_status(cwd: String, launch: State<'_, LaunchContext>) -> ApiKeyStatusResult {
-    let active_cwd = active_launch_path(&cwd, &launch);
-    resolved_api_key_status(&active_cwd, &launch)
+pub fn get_api_key_status(cwd: String, state: State<'_, AppState>) -> ApiKeyStatusResult {
+    let active_cwd = active_launch_path(&cwd, &state.launch);
+    resolved_api_key_status(&active_cwd, &state)
+}
+
+#[tauri::command]
+pub fn set_session_api_key(
+    cwd: String,
+    api_key: String,
+    state: State<'_, AppState>,
+) -> ApiKeyStatusResult {
+    if let Ok(mut session_key) = session_api_key_store().lock() {
+        let trimmed = api_key.trim().to_string();
+        if trimmed.is_empty() {
+            *session_key = None;
+        } else {
+            *session_key = Some(trimmed);
+        }
+    }
+
+    let mut config = load_app_config().unwrap_or_default();
+    config.key_status = KeyStatus::Saved;
+    config.key_source = Some("session input".into());
+    let _ = save_app_config(&config);
+
+    let active_cwd = active_launch_path(&cwd, &state.launch);
+    resolved_api_key_status(&active_cwd, &state)
+}
+
+#[tauri::command]
+pub fn clear_session_api_key(cwd: String, state: State<'_, AppState>) -> ApiKeyStatusResult {
+    if let Ok(mut session_key) = session_api_key_store().lock() {
+        *session_key = None;
+    }
+
+    let active_cwd = active_launch_path(&cwd, &state.launch);
+    resolved_api_key_status(&active_cwd, &state)
 }
 
 #[tauri::command]
 pub fn set_model_preference(
     cwd: String,
     model_name: String,
-    launch: State<'_, LaunchContext>,
+    state: State<'_, AppState>,
 ) -> ApiKeyStatusResult {
     let mut config = load_app_config().unwrap_or_default();
     let requested_model = model_name.trim();
@@ -149,8 +219,8 @@ pub fn set_model_preference(
     };
     let _ = save_app_config(&config);
 
-    let active_cwd = active_launch_path(&cwd, &launch);
-    resolved_api_key_status(&active_cwd, &launch)
+    let active_cwd = active_launch_path(&cwd, &state.launch);
+    resolved_api_key_status(&active_cwd, &state)
 }
 
 #[tauri::command]
@@ -168,7 +238,7 @@ pub async fn generate_commit_message(
             )
         }
     };
-    let (api_key, key_source) = match secure_store::read_api_key(repo_path) {
+    let (api_key, key_source) = match read_api_key(repo_path) {
         Ok(api_key) => api_key,
         Err(error) => {
             return GenerateCommitMessageResult::failure(

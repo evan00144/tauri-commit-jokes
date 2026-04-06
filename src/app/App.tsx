@@ -6,12 +6,14 @@ import { GeneratorPanel } from "../features/generator/GeneratorPanel";
 import { RepoSummary } from "../features/repo-status/RepoSummary";
 import { copyText } from "../lib/clipboard";
 import {
+  clearSessionApiKey,
   chooseRepoRoot,
   generateCommitMessage,
   getApiKeyStatus,
   getRepoStatus,
   initContext,
   openExternal,
+  setSessionApiKey,
   setModelPreference,
 } from "../lib/tauri";
 import type {
@@ -52,6 +54,7 @@ export default function App() {
   const [booting, setBooting] = useState(true);
   const [refreshingRepo, setRefreshingRepo] = useState(false);
   const [switchingRepo, setSwitchingRepo] = useState(false);
+  const [savingApiKey, setSavingApiKey] = useState(false);
   const [savingModel, setSavingModel] = useState(false);
   const [generationNonce, setGenerationNonce] = useState(0);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
@@ -224,6 +227,32 @@ export default function App() {
     setCopyState(copied ? "copied" : "error");
   }
 
+  async function handleSaveSessionApiKey(apiKey: string) {
+    setSavingApiKey(true);
+    setInlineError(null);
+
+    try {
+      const nextKeyStatus = await setSessionApiKey(launchPath, apiKey);
+      setApiKeyStatus(nextKeyStatus);
+      setViewState((current) => resolveViewState(nextKeyStatus, repoStatus, current));
+    } finally {
+      setSavingApiKey(false);
+    }
+  }
+
+  async function handleClearSessionApiKey() {
+    setSavingApiKey(true);
+    setInlineError(null);
+
+    try {
+      const nextKeyStatus = await clearSessionApiKey(launchPath);
+      setApiKeyStatus(nextKeyStatus);
+      setViewState((current) => resolveViewState(nextKeyStatus, repoStatus, current));
+    } finally {
+      setSavingApiKey(false);
+    }
+  }
+
   async function handleSaveModel(modelName: string) {
     setSavingModel(true);
     setInlineError(null);
@@ -367,8 +396,11 @@ export default function App() {
             <ApiKeyForm
               viewState={viewState}
               apiKeyStatus={apiKeyStatus}
+              savingApiKey={savingApiKey}
               savingModel={savingModel}
               inlineError={viewState === "missing_api_key" ? generationError : null}
+              onSaveSessionApiKey={handleSaveSessionApiKey}
+              onClearSessionApiKey={handleClearSessionApiKey}
               onSaveModel={handleSaveModel}
             />
           </div>

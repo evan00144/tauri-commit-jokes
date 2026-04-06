@@ -6,8 +6,11 @@ import type { ApiKeyStatusResult, ViewState } from "../../types/contracts";
 type ApiKeyFormProps = {
   viewState: ViewState;
   apiKeyStatus: ApiKeyStatusResult | null;
+  savingApiKey: boolean;
   savingModel: boolean;
   inlineError: string | null;
+  onSaveSessionApiKey: (apiKey: string) => Promise<void>;
+  onClearSessionApiKey: () => Promise<void>;
   onSaveModel: (modelName: string) => Promise<void>;
 };
 
@@ -16,8 +19,11 @@ const CUSTOM_MODEL_SENTINEL = "__custom_gemini_model__";
 export function ApiKeyForm({
   viewState,
   apiKeyStatus,
+  savingApiKey,
   savingModel,
   inlineError,
+  onSaveSessionApiKey,
+  onClearSessionApiKey,
   onSaveModel,
 }: ApiKeyFormProps) {
   const needsAttention =
@@ -39,6 +45,7 @@ export function ApiKeyForm({
   );
 
   const activeModel = apiKeyStatus?.modelName ?? "gemini-2.5-flash";
+  const [sessionApiKey, setSessionApiKey] = useState("");
   const activeIsPreset = supportedModels.includes(activeModel);
   const [selectedModel, setSelectedModel] = useState(
     activeIsPreset ? activeModel : CUSTOM_MODEL_SENTINEL,
@@ -66,7 +73,7 @@ export function ApiKeyForm({
   return (
     <Panel
       title="Gemini Setup"
-      subtitle="API keys stay in repo env or shell env. Model choice is stored in GitRoast app config so you do not need model env overrides."
+      subtitle="GitRoast can read the API key from repo env or shell env, or you can paste one that lives only for the current app session."
       aside={
         needsAttention ? (
           <StatusPill tone="warning">Action needed</StatusPill>
@@ -78,7 +85,7 @@ export function ApiKeyForm({
       <div className="detail-list">
         <div className="detail-row">
           <span className="detail-label">Lookup order</span>
-          <span className="detail-value">`.env.local`, `.env`, shell env</span>
+          <span className="detail-value">session input, `.env.local`, `.env`, shell env</span>
         </div>
         <div className="detail-row">
           <span className="detail-label">Accepted key names</span>
@@ -97,6 +104,48 @@ export function ApiKeyForm({
       </div>
 
       <div className="settings-grid">
+        <div className="field-block">
+          <label className="field-label" htmlFor="session-api-key">
+            Session API key
+          </label>
+          <input
+            id="session-api-key"
+            className="text-input"
+            type="password"
+            value={sessionApiKey}
+            onChange={(event) => setSessionApiKey(event.target.value)}
+            placeholder="Paste Gemini API key for this session only"
+            disabled={savingApiKey}
+          />
+          <p className="field-help">
+            This key stays in memory only and disappears when GitRoast closes. Useful on Windows
+            when your WSL shell env is not visible to the packaged app.
+          </p>
+          <div className="button-row">
+            <button
+              className="button-secondary"
+              type="button"
+              disabled={savingApiKey || sessionApiKey.trim().length === 0}
+              onClick={() => {
+                void onSaveSessionApiKey(sessionApiKey.trim());
+              }}
+            >
+              {savingApiKey ? "Saving key..." : "Use for this session"}
+            </button>
+            <button
+              className="button-ghost"
+              type="button"
+              disabled={savingApiKey || apiKeyStatus?.keySource !== "session input"}
+              onClick={() => {
+                setSessionApiKey("");
+                void onClearSessionApiKey();
+              }}
+            >
+              Clear session key
+            </button>
+          </div>
+        </div>
+
         <div className="field-block">
           <label className="field-label" htmlFor="model-preset">
             Gemini model
@@ -161,7 +210,7 @@ GEMINI_API_KEY=your_gemini_api_key_here`}</pre>
 
       {needsAttention ? (
         <p className="error-copy">
-          Create `.env.local` in this repo, add your Gemini key, then click `Refresh`.
+          Add a Gemini key through session input or create `.env.local` in this repo, then click `Refresh`.
         </p>
       ) : null}
 
