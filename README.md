@@ -1,6 +1,35 @@
 # GitRoast
 
-GitRoast is a Tauri desktop utility that reads staged Git changes from the current repository and generates one funny, usable commit message with Gemini.
+GitRoast is a small open-source desktop app for fun commit roasting.
+
+It reads your staged Git diff, sends it to Gemini with your own API key, and gives you a commit message that is hopefully funny enough to keep and usable enough to paste.
+
+This project is intentionally lightweight:
+- open source
+- local-first
+- BYOK for Gemini
+- built more for developer fun than enterprise workflow rigor
+
+If you want to inspect exactly what it does, the source is public here:
+- [github.com/evan00144/tauri-commit-jokes](https://github.com/evan00144/tauri-commit-jokes)
+
+If GitRoast made your commit history slightly more cursed and you want to support it:
+- [Buy me a drink on Trakteer](https://trakteer.id/evan_0014)
+
+## What It Is
+
+- A playful commit-message generator for staged changes
+- An open-source Tauri desktop app
+- A bring-your-own-key tool for Google Gemini
+- A side project that prioritizes transparency over automation magic
+
+## What It Is Not
+
+- not a full Git client
+- not an auto-commit bot
+- not a hosted SaaS
+- not a hidden-proxy AI wrapper
+- not a serious compliance-grade developer platform
 
 ## Stack
 
@@ -166,3 +195,9 @@ Notes:
 - Model availability still depends on your Gemini project quota and billing tier.
 - The app never auto-commits in MVP.
 - The frontend owns clipboard copy behavior.
+
+## Support
+
+If you want to support the project, use Trakteer:
+
+- [trakteer.id/evan_0014](https://trakteer.id/evan_0014)
