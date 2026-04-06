@@ -1,6 +1,7 @@
 export type ErrorCode =
   | "missing_api_key"
   | "invalid_api_key"
+  | "quota_exhausted"
   | "git_unavailable"
   | "not_a_repo"
   | "no_staged_changes"
@@ -35,17 +36,13 @@ export type RepoStatusResult = {
   errorCode: ErrorCode | null;
 };
 
-export type SaveApiKeyResult = {
-  success: boolean;
-  providerName: "gemini";
-  modelName: "gemini-2.5-flash";
-  keyStatus: "saved" | "invalid" | "error";
-  errorCode: ErrorCode | null;
-};
-
 export type ApiKeyStatusResult = {
   providerName: "gemini";
-  modelName: "gemini-2.5-flash";
+  modelName: string;
+  modelSource: string;
+  modelWarning: string | null;
+  supportedModels: string[];
+  acceptedKeyNames: string[];
   keyPresent: boolean;
   keyStatus: "missing" | "saved" | "valid" | "invalid";
   keySource: string | null;
@@ -56,7 +53,7 @@ export type ApiKeyStatusResult = {
 export type GenerateCommitMessageResult = {
   success: boolean;
   message: string | null;
-  modelName: "gemini-2.5-flash";
+  modelName: string;
   promptVersion: string;
   errorCode: ErrorCode | null;
 };

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import "../App.css";
+import { ApiKeyForm } from "../features/onboarding/ApiKeyForm";
 import { GeneratorPanel } from "../features/generator/GeneratorPanel";
 import { RepoSummary } from "../features/repo-status/RepoSummary";
 import { copyText } from "../lib/clipboard";
@@ -8,6 +9,8 @@ import {
   getApiKeyStatus,
   getRepoStatus,
   initContext,
+  saveApiKey,
+  saveModel,
 } from "../lib/tauri";
 import type {
   ApiKeyStatusResult,
@@ -26,9 +29,13 @@ function describeError(errorCode: string | null): string {
     case "no_staged_changes":
       return "There are no staged changes yet. Run git add first, then generate again.";
     case "missing_api_key":
-      return "Add GEMINI_API_KEY or GOOGLE_API_KEY to the project .env before generation is allowed.";
+      return "Save a Gemini API key in settings before generation is allowed.";
     case "invalid_api_key":
       return "The saved Gemini API key was rejected. Replace it and try again.";
+    case "unsupported_model":
+      return "That model is not supported by GitRoast. Pick one from the supported list.";
+    case "quota_exhausted":
+      return "The selected Gemini model is hitting quota limits for this project. Switch to gemini-2.5-flash or gemini-2.5-flash-lite, or wait for quota to reset.";
     case "diff_too_large":
       return "The staged diff is larger than the MVP limit of 250 KB.";
     case "provider_timeout":
@@ -46,11 +53,36 @@ export default function App() {
   const [refreshingRepo, setRefreshingRepo] = useState(false);
   const [generationNonce, setGenerationNonce] = useState(0);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
+  const [savingApiKey, setSavingApiKey] = useState(false);
+  const [savingModel, setSavingModel] = useState(false);
   const [repoContext, setRepoContext] = useState<RepoContextResult | null>(null);
   const [repoStatus, setRepoStatus] = useState<RepoStatusResult | null>(null);
   const [apiKeyStatus, setApiKeyStatus] = useState<ApiKeyStatusResult | null>(null);
   const [generation, setGeneration] = useState<GenerateCommitMessageResult | null>(null);
   const [inlineError, setInlineError] = useState<string | null>(null);
+
+  function resolveViewState(
+    keyStatus: ApiKeyStatusResult | null,
+    status: RepoStatusResult | null,
+    previousState?: ViewState,
+  ): ViewState {
+    if (!keyStatus?.keyPresent || keyStatus.keyStatus === "missing") {
+      return "missing_api_key";
+    }
+
+    if (!status?.hasStagedChanges || status.errorCode === "no_staged_changes") {
+      return "no_staged_changes";
+    }
+
+    if (
+      previousState &&
+      (previousState === "generation_success" || previousState === "generation_error")
+    ) {
+      return previousState;
+    }
+
+    return "ready_to_generate";
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -84,13 +116,6 @@ export default function App() {
 
       setApiKeyStatus(keyStatus);
 
-      if (!keyStatus.keyPresent || keyStatus.keyStatus === "missing") {
-        setViewState("missing_api_key");
-        setRepoStatus(null);
-        setBooting(false);
-        return;
-      }
-
       const status = await getRepoStatus(context.repoRoot);
 
       if (cancelled) {
@@ -98,12 +123,7 @@ export default function App() {
       }
 
       setRepoStatus(status);
-
-      if (!status.hasStagedChanges || status.errorCode === "no_staged_changes") {
-        setViewState("no_staged_changes");
-      } else {
-        setViewState("ready_to_generate");
-      }
+      setViewState(resolveViewState(keyStatus, status));
 
       setBooting(false);
     }
@@ -133,21 +153,9 @@ export default function App() {
     try {
       const status = await getRepoStatus(repoContext.repoRoot);
       setRepoStatus(status);
-
-      setViewState((current) => {
-        if (!status.hasStagedChanges || status.errorCode === "no_staged_changes") {
-          return "no_staged_changes";
-        }
-
-        if (
-          preserveViewState &&
-          (current === "generation_success" || current === "generation_error")
-        ) {
-          return current;
-        }
-
-        return "ready_to_generate";
-      });
+      setViewState((current) =>
+        resolveViewState(apiKeyStatus, status, preserveViewState ? current : undefined),
+      );
     } finally {
       if (!silent) {
         setRefreshingRepo(false);
@@ -156,7 +164,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (!repoContext?.repoRoot || !apiKeyStatus?.keyPresent) {
+    if (!repoContext?.repoRoot) {
       return;
     }
 
@@ -210,6 +218,48 @@ export default function App() {
     setViewState("generation_error");
   }
 
+  async function handleSaveApiKey(apiKey: string) {
+    setSavingApiKey(true);
+    setInlineError(null);
+
+    try {
+      const result = await saveApiKey(apiKey.trim());
+      if (!result.success) {
+        setInlineError(describeError(result.errorCode));
+        return;
+      }
+
+      const nextKeyStatus = await getApiKeyStatus();
+      setApiKeyStatus(nextKeyStatus);
+
+      if (repoContext?.repoRoot) {
+        const status = await getRepoStatus(repoContext.repoRoot);
+        setRepoStatus(status);
+        setViewState(resolveViewState(nextKeyStatus, status));
+      }
+    } finally {
+      setSavingApiKey(false);
+    }
+  }
+
+  async function handleSaveModel(modelName: string) {
+    setSavingModel(true);
+    setInlineError(null);
+
+    try {
+      const result = await saveModel(modelName);
+      if (!result.success) {
+        setInlineError(describeError(result.errorCode));
+        return;
+      }
+
+      const nextKeyStatus = await getApiKeyStatus();
+      setApiKeyStatus(nextKeyStatus);
+    } finally {
+      setSavingModel(false);
+    }
+  }
+
   async function handleCopy() {
     if (!generation?.message) {
       return;
@@ -220,6 +270,7 @@ export default function App() {
   }
 
   const generationError = generation && !generation.success ? describeError(generation.errorCode) : inlineError;
+  const activeModel = apiKeyStatus?.modelName ?? "gemini-2.5-flash";
 
   return (
     <main className="app-shell">
@@ -229,25 +280,38 @@ export default function App() {
           <h1>Read the staged diff. Roast the commit. Keep moving.</h1>
           <p>
             GitRoast opens in your current repository, checks staged changes,
-            sends them to Gemini 2.5 Flash, and gives you one commit message
+            sends them to {activeModel}, and gives you one commit message
             worth copying.
           </p>
         </section>
 
         <div className="grid">
-          <RepoSummary
-            repoContext={repoContext}
-            repoStatus={repoStatus}
-            booting={booting}
-            viewState={viewState}
-            refreshingRepo={refreshingRepo}
-            onRefresh={() => refreshRepoState({ preserveViewState: true })}
-          />
+          <div className="stack">
+            <RepoSummary
+              repoContext={repoContext}
+              repoStatus={repoStatus}
+              apiKeyStatus={apiKeyStatus}
+              booting={booting}
+              viewState={viewState}
+              refreshingRepo={refreshingRepo}
+              onRefresh={() => refreshRepoState({ preserveViewState: true })}
+            />
+            <ApiKeyForm
+              viewState={viewState}
+              apiKeyStatus={apiKeyStatus}
+              inlineError={viewState === "missing_api_key" ? generationError : null}
+              savingApiKey={savingApiKey}
+              savingModel={savingModel}
+              onSaveApiKey={handleSaveApiKey}
+              onSaveModel={handleSaveModel}
+            />
+          </div>
 
           <GeneratorPanel
             viewState={viewState}
             repoStatus={repoStatus}
             generation={generation}
+            activeModel={activeModel}
             copyState={copyState}
             booting={booting}
             inlineError={generationError}

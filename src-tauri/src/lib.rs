@@ -41,7 +41,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::init_context,
             commands::get_repo_status,
-            commands::save_api_key,
             commands::get_api_key_status,
             commands::generate_commit_message
         ])

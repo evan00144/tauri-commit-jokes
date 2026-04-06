@@ -1,10 +1,16 @@
 import { Panel } from "../../components/Panel";
 import { StatusPill } from "../../components/StatusPill";
-import type { RepoContextResult, RepoStatusResult, ViewState } from "../../types/contracts";
+import type {
+  ApiKeyStatusResult,
+  RepoContextResult,
+  RepoStatusResult,
+  ViewState,
+} from "../../types/contracts";
 
 type RepoSummaryProps = {
   repoContext: RepoContextResult | null;
   repoStatus: RepoStatusResult | null;
+  apiKeyStatus: ApiKeyStatusResult | null;
   booting: boolean;
   viewState: ViewState;
   refreshingRepo: boolean;
@@ -46,6 +52,7 @@ function formatKilobytes(bytes: number | null | undefined) {
 export function RepoSummary({
   repoContext,
   repoStatus,
+  apiKeyStatus,
   booting,
   viewState,
   refreshingRepo,
@@ -54,6 +61,13 @@ export function RepoSummary({
   const repoName = repoContext?.repoName ?? "Unknown repo";
   const repoRoot = repoContext?.repoRoot ?? "No repository detected";
   const tone = getContextTone(viewState);
+  const activeModel = apiKeyStatus?.modelName ?? "gemini-2.5-flash";
+  const supportedModels = apiKeyStatus?.supportedModels ?? [
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "gemini-2.5-flash-lite",
+  ];
+  const modelSource = apiKeyStatus?.modelSource ?? "default";
 
   return (
     <Panel
@@ -104,7 +118,27 @@ export function RepoSummary({
             {formatKilobytes(repoStatus?.diffByteSize)}
           </span>
         </div>
+        <div className="fact-row">
+          <span className="fact-label">Active model</span>
+          <span className="fact-value">{activeModel}</span>
+        </div>
+        <div className="fact-row">
+          <span className="fact-label">Model source</span>
+          <span className="fact-value">{modelSource}</span>
+        </div>
+        <div className="fact-row">
+          <span className="fact-label">Model override keys</span>
+          <span className="fact-value">GITROAST_GEMINI_MODEL, GEMINI_MODEL</span>
+        </div>
+        <div className="fact-row">
+          <span className="fact-label">Supported models</span>
+          <span className="fact-value">{supportedModels.join(", ")}</span>
+        </div>
       </div>
+
+      {apiKeyStatus?.modelWarning ? (
+        <p className="error-copy">{apiKeyStatus.modelWarning}</p>
+      ) : null}
     </Panel>
   );
 }

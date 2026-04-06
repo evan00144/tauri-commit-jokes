@@ -10,6 +10,7 @@ type GeneratorPanelProps = {
   viewState: ViewState;
   repoStatus: RepoStatusResult | null;
   generation: GenerateCommitMessageResult | null;
+  activeModel: string;
   copyState: "idle" | "copied" | "error";
   booting: boolean;
   inlineError: string | null;
@@ -20,7 +21,7 @@ type GeneratorPanelProps = {
 function renderStateCopy(viewState: ViewState) {
   switch (viewState) {
     case "missing_api_key":
-      return "Add your Gemini API key to unlock generation.";
+      return "Save your Gemini API key in settings to unlock generation.";
     case "invalid_launch_context":
       return "Launch GitRoast from a repository so it can read the staged diff.";
     case "no_staged_changes":
@@ -42,6 +43,7 @@ export function GeneratorPanel({
   viewState,
   repoStatus,
   generation,
+  activeModel,
   copyState,
   booting,
   inlineError,
@@ -60,7 +62,7 @@ export function GeneratorPanel({
   return (
     <Panel
       title="Commit Generator"
-      subtitle={renderStateCopy(viewState)}
+      subtitle={`${renderStateCopy(viewState)} Using ${activeModel}.`}
       aside={
         <StatusPill
           tone={

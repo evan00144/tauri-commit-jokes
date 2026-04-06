@@ -8,10 +8,16 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub const PROVIDER_NAME: &str = "gemini";
-pub const MODEL_NAME: &str = "gemini-2.5-flash";
+pub const DEFAULT_MODEL_NAME: &str = "gemini-2.5-flash";
+pub const SUPPORTED_MODEL_NAMES: [&str; 3] = [
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "gemini-2.5-flash-lite",
+];
 pub const PROMPT_VERSION: &str = "v2";
 pub const DIFF_BYTE_LIMIT: usize = 250 * 1024;
 pub const ENV_KEY_NAMES: [&str; 2] = ["GEMINI_API_KEY", "GOOGLE_API_KEY"];
+pub const ENV_MODEL_NAMES: [&str; 2] = ["GITROAST_GEMINI_MODEL", "GEMINI_MODEL"];
 
 #[derive(Debug, Error)]
 pub enum AppError {
@@ -23,6 +29,8 @@ pub enum AppError {
     MissingApiKey,
     #[error("Invalid API key")]
     InvalidApiKey,
+    #[error("Quota exceeded")]
+    QuotaExceeded,
     #[error("Provider timeout")]
     ProviderTimeout,
     #[error("{0}")]
@@ -42,6 +50,7 @@ impl AppError {
             Self::NotARepo => "not_a_repo",
             Self::MissingApiKey => "missing_api_key",
             Self::InvalidApiKey => "invalid_api_key",
+            Self::QuotaExceeded => "quota_exhausted",
             Self::ProviderTimeout => "provider_timeout",
             Self::Provider(_) | Self::Git(_) | Self::Io(_) | Self::Json(_) => "provider_error",
         }
@@ -86,7 +95,7 @@ impl Default for AppConfig {
         Self {
             onboarding_completed: false,
             provider_name: PROVIDER_NAME.into(),
-            model_name: MODEL_NAME.into(),
+            model_name: DEFAULT_MODEL_NAME.into(),
             key_status: KeyStatus::Missing,
             key_source: None,
             last_validated_at: None,
@@ -177,25 +186,19 @@ pub struct RepoStatusResult {
     pub error_code: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SaveApiKeyResult {
-    pub success: bool,
-    pub provider_name: String,
+#[derive(Debug, Clone)]
+pub struct ResolvedModel {
     pub model_name: String,
-    pub key_status: String,
-    pub error_code: Option<String>,
+    pub model_source: String,
+    pub model_warning: Option<String>,
 }
 
-impl SaveApiKeyResult {
-    pub fn error() -> Self {
-        Self {
-            success: false,
-            provider_name: PROVIDER_NAME.into(),
-            model_name: MODEL_NAME.into(),
-            key_status: "error".into(),
-            error_code: None,
-        }
+impl ResolvedModel {
+    pub fn supported_models() -> Vec<String> {
+        SUPPORTED_MODEL_NAMES
+            .iter()
+            .map(|value| (*value).to_string())
+            .collect()
     }
 }
 
@@ -204,6 +207,10 @@ impl SaveApiKeyResult {
 pub struct ApiKeyStatusResult {
     pub provider_name: String,
     pub model_name: String,
+    pub model_source: String,
+    pub model_warning: Option<String>,
+    pub supported_models: Vec<String>,
+    pub accepted_key_names: Vec<String>,
     pub key_present: bool,
     pub key_status: String,
     pub key_source: Option<String>,
@@ -212,10 +219,14 @@ pub struct ApiKeyStatusResult {
 }
 
 impl ApiKeyStatusResult {
-    pub fn from_config(config: &AppConfig, key_present: bool) -> Self {
+    pub fn from_config(config: &AppConfig, key_present: bool, model: &ResolvedModel) -> Self {
         Self {
             provider_name: config.provider_name.clone(),
-            model_name: config.model_name.clone(),
+            model_name: model.model_name.clone(),
+            model_source: model.model_source.clone(),
+            model_warning: model.model_warning.clone(),
+            supported_models: ResolvedModel::supported_models(),
+            accepted_key_names: ENV_KEY_NAMES.iter().map(|value| (*value).to_string()).collect(),
             key_present,
             key_status: if key_present {
                 config.key_status.as_str().into()
@@ -240,11 +251,11 @@ pub struct GenerateCommitMessageResult {
 }
 
 impl GenerateCommitMessageResult {
-    pub fn failure(error_code: &str) -> Self {
+    pub fn failure(error_code: &str, model_name: &str) -> Self {
         Self {
             success: false,
             message: None,
-            model_name: MODEL_NAME.into(),
+            model_name: model_name.into(),
             prompt_version: PROMPT_VERSION.into(),
             error_code: Some(error_code.into()),
         }

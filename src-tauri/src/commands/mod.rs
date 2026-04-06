@@ -8,8 +8,7 @@ use crate::{
     git,
     models::{
         load_app_config, save_app_config, ApiKeyStatusResult, GenerateCommitMessageResult,
-        KeyStatus, RepoContextResult, RepoStatusResult, SaveApiKeyResult, MODEL_NAME,
-        PROMPT_VERSION,
+        KeyStatus, RepoContextResult, RepoStatusResult, PROMPT_VERSION,
     },
     secure_store,
 };
@@ -79,19 +78,29 @@ pub fn get_repo_status(repo_root: String) -> RepoStatusResult {
 }
 
 #[tauri::command]
-pub fn save_api_key(api_key: String) -> SaveApiKeyResult {
-    let _ = api_key;
-    SaveApiKeyResult::error()
-}
-
-#[tauri::command]
 pub fn get_api_key_status(launch: State<'_, LaunchContext>) -> ApiKeyStatusResult {
     let mut config = load_app_config().unwrap_or_default();
     let Some(repo_root) = repo_root_from_launch(&launch) else {
         config.key_status = KeyStatus::Missing;
+        let model = secure_store::read_model(Path::new(".")).unwrap_or_else(|_| {
+            crate::models::ResolvedModel {
+                model_name: secure_store::default_model_name().into(),
+                model_source: "default".into(),
+                model_warning: None,
+            }
+        });
         config.key_source = None;
-        return ApiKeyStatusResult::from_config(&config, false);
+        return ApiKeyStatusResult::from_config(&config, false, &model);
     };
+
+    let resolved_model = secure_store::read_model(&repo_root).unwrap_or_else(|_| {
+        crate::models::ResolvedModel {
+            model_name: secure_store::default_model_name().into(),
+            model_source: "default".into(),
+            model_warning: None,
+        }
+    });
+    config.model_name = resolved_model.model_name.clone();
 
     match secure_store::has_api_key(&repo_root) {
         Ok(Some(source)) => {
@@ -99,16 +108,16 @@ pub fn get_api_key_status(launch: State<'_, LaunchContext>) -> ApiKeyStatusResul
                 config.key_status = KeyStatus::Saved;
             }
             config.key_source = Some(source);
-            ApiKeyStatusResult::from_config(&config, true)
+            ApiKeyStatusResult::from_config(&config, true, &resolved_model)
         }
         Ok(None) => {
             config.key_status = KeyStatus::Missing;
             config.key_source = None;
-            ApiKeyStatusResult::from_config(&config, false)
+            ApiKeyStatusResult::from_config(&config, false, &resolved_model)
         }
         Err(_) => {
             config.key_source = None;
-            ApiKeyStatusResult::from_config(&config, false)
+            ApiKeyStatusResult::from_config(&config, false, &resolved_model)
         }
     }
 }
@@ -121,33 +130,58 @@ pub async fn generate_commit_message(
     let repo_path = Path::new(&repo_root);
     let (api_key, key_source) = match secure_store::read_api_key(repo_path) {
         Ok(api_key) => api_key,
-        Err(error) => return GenerateCommitMessageResult::failure(error.error_code()),
+        Err(error) => {
+            return GenerateCommitMessageResult::failure(
+                error.error_code(),
+                secure_store::default_model_name(),
+            )
+        }
+    };
+    let config = load_app_config().unwrap_or_default();
+    let resolved_model = match secure_store::read_model(repo_path) {
+        Ok(model) => model,
+        Err(error) => {
+            return GenerateCommitMessageResult::failure(
+                error.error_code(),
+                secure_store::default_model_name(),
+            )
+        }
     };
 
     let diff = match git::read_staged_diff(repo_path) {
         Ok(diff) => diff,
-        Err(error) => return GenerateCommitMessageResult::failure(error.error_code()),
+        Err(error) => {
+            return GenerateCommitMessageResult::failure(error.error_code(), &resolved_model.model_name)
+        }
     };
 
     if diff.trim().is_empty() {
-        return GenerateCommitMessageResult::failure("no_staged_changes");
+        return GenerateCommitMessageResult::failure("no_staged_changes", &resolved_model.model_name);
     }
 
     if diff.len() > crate::models::DIFF_BYTE_LIMIT {
-        return GenerateCommitMessageResult::failure("diff_too_large");
+        return GenerateCommitMessageResult::failure("diff_too_large", &resolved_model.model_name);
     }
 
-    match ai::generate_commit_message(&api_key, &diff, generation_nonce).await {
+    match ai::generate_commit_message(
+        &api_key,
+        &resolved_model.model_name,
+        &diff,
+        generation_nonce,
+    )
+    .await
+    {
         Ok(message) => {
             let mut config = load_app_config().unwrap_or_default();
             config.key_status = KeyStatus::Valid;
             config.key_source = Some(key_source);
+            config.model_name = resolved_model.model_name.clone();
             config.last_validated_at = Some(Utc::now().to_rfc3339());
             let _ = save_app_config(&config);
             GenerateCommitMessageResult {
                 success: true,
                 message: Some(message),
-                model_name: MODEL_NAME.into(),
+                model_name: resolved_model.model_name,
                 prompt_version: PROMPT_VERSION.into(),
                 error_code: None,
             }
@@ -157,11 +191,12 @@ pub async fn generate_commit_message(
                 let mut config = load_app_config().unwrap_or_default();
                 config.key_status = KeyStatus::Invalid;
                 config.key_source = Some(key_source);
+                config.model_name = resolved_model.model_name.clone();
                 config.last_validated_at = None;
                 let _ = save_app_config(&config);
             }
 
-            GenerateCommitMessageResult::failure(error.error_code())
+            GenerateCommitMessageResult::failure(error.error_code(), &resolved_model.model_name)
         }
     }
 }
