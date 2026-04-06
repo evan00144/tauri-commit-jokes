@@ -17,6 +17,19 @@ enum GitExecutionContext {
     Wsl { distro: String, linux_dir: String },
 }
 
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+#[cfg(windows)]
+fn hide_child_window(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+fn hide_child_window(_command: &mut Command) {}
+
 fn normalized_path(input: &str) -> String {
     input.replace('/', "\\")
 }
@@ -78,14 +91,17 @@ fn execution_context_from_path(path: &Path) -> GitExecutionContext {
 
 fn run_git(context: &GitExecutionContext, args: &[&str]) -> Result<Output, AppError> {
     let output = match context {
-        GitExecutionContext::Native { current_dir } => Command::new("git")
-            .args(args)
-            .current_dir(current_dir)
-            .output(),
+        GitExecutionContext::Native { current_dir } => {
+            let mut command = Command::new("git");
+            command.args(args).current_dir(current_dir);
+            hide_child_window(&mut command);
+            command.output()
+        }
         GitExecutionContext::Wsl { distro, linux_dir } => {
             let mut command = Command::new("wsl.exe");
             command.args(["-d", distro, "--cd", linux_dir, "git"]);
             command.args(args);
+            hide_child_window(&mut command);
             command.output()
         }
     };

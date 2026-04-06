@@ -155,8 +155,6 @@ export default function App() {
     const syncRepoState = () => {
       void refreshRepoState({ preserveViewState: true, silent: true });
     };
-
-    const intervalId = window.setInterval(syncRepoState, 5000);
     window.addEventListener("focus", syncRepoState);
 
     const handleVisibilityChange = () => {
@@ -168,7 +166,6 @@ export default function App() {
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      window.clearInterval(intervalId);
       window.removeEventListener("focus", syncRepoState);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
