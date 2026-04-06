@@ -1,0 +1,198 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: Release tag to publish, for example v0.1.0
+        required: true
+        type: string
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+
+jobs:
+  publish-tauri:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            target: ""
+            args: ""
+          - platform: windows-latest
+            target: ""
+            args: ""
+          - platform: macos-13
+            target: x86_64-apple-darwin
+            args: "--target x86_64-apple-darwin"
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            args: "--target aarch64-apple-darwin"
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate release tag
+        shell: bash
+        run: |
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.].+)?$ ]]; then
+            echo "Expected a SemVer-style tag like v0.1.0, got: ${RELEASE_TAG}" >&2
+            exit 1
+          fi
+
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            libwebkit2gtk-4.1-dev \
+            patchelf \
+            wget
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install macOS Rust target
+        if: matrix.target != ''
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Restore Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Import Apple certificate
+        if: runner.os == 'macOS' && secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_CERTIFICATE_PASSWORD != '' && secrets.KEYCHAIN_PASSWORD != ''
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        shell: bash
+        run: |
+          echo "$APPLE_CERTIFICATE" | base64 --decode > signing-certificate.p12
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+          security import signing-certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+
+          if [[ -n "$APPLE_SIGNING_IDENTITY" ]]; then
+            echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY" >> "$GITHUB_ENV"
+          else
+            DETECTED_IDENTITY=$(security find-identity -v -p codesigning build.keychain | awk -F'"' 'NR==1 {print $2}')
+            if [[ -n "$DETECTED_IDENTITY" ]]; then
+              echo "APPLE_SIGNING_IDENTITY=$DETECTED_IDENTITY" >> "$GITHUB_ENV"
+            fi
+          fi
+
+      - name: Materialize App Store Connect API key
+        if: runner.os == 'macOS' && secrets.APPLE_API_KEY != '' && secrets.APPLE_API_ISSUER != '' && secrets.APPLE_API_KEY_CONTENT != ''
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+        shell: bash
+        run: |
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY}.p8"
+          printf '%s' "$APPLE_API_KEY_CONTENT" > "$KEY_PATH"
+          echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+
+      - name: Build release notes from changelog
+        id: release_notes
+        shell: bash
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          NOTES_FILE="$RUNNER_TEMP/release-notes.md"
+
+          python3 - <<'PY' > "$NOTES_FILE"
+          import pathlib
+          import re
+          import os
+
+          version = os.environ["VERSION"]
+          changelog = pathlib.Path("CHANGELOG.md")
+
+          if changelog.exists():
+              text = changelog.read_text()
+              pattern = re.compile(
+                  rf"^##\s+\[?{re.escape(version)}\]?(?:\s+-\s+.*)?\n(.*?)(?=^##\s+|\Z)",
+                  re.MULTILINE | re.DOTALL,
+              )
+              match = pattern.search(text)
+              if match:
+                  body = match.group(1).strip()
+                  if body:
+                      print(body)
+                      raise SystemExit(0)
+
+          print(f"Automated desktop bundles for GitRoast v{version}.")
+          print()
+          print("No versioned changelog section was found, so this release is using fallback notes.")
+          PY
+
+          {
+            echo "body<<EOF"
+            cat "$NOTES_FILE"
+            echo
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+        env:
+          VERSION: ${{ env.RELEASE_TAG }}
+
+      - name: Build and publish Tauri bundles
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: GitRoast ${{ env.RELEASE_TAG }}
+          releaseBody: ${{ steps.release_notes.outputs.body }}
+          releaseDraft: false
+          prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
+          tauriScript: pnpm tauri
+          args: ${{ matrix.args }}
