@@ -18,8 +18,9 @@ export function getApiKeyStatus() {
   return invoke<ApiKeyStatusResult>("get_api_key_status");
 }
 
-export function generateCommitMessage(repoRoot: string) {
+export function generateCommitMessage(repoRoot: string, generationNonce: number) {
   return invoke<GenerateCommitMessageResult>("generate_commit_message", {
     repoRoot,
+    generationNonce,
   });
 }

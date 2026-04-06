@@ -1,9 +1,6 @@
 import { useEffect, useState } from "react";
 import "../App.css";
-import { Panel } from "../components/Panel";
-import { StatusPill } from "../components/StatusPill";
 import { GeneratorPanel } from "../features/generator/GeneratorPanel";
-import { ApiKeyForm } from "../features/onboarding/ApiKeyForm";
 import { RepoSummary } from "../features/repo-status/RepoSummary";
 import { copyText } from "../lib/clipboard";
 import {
@@ -43,22 +40,11 @@ function describeError(errorCode: string | null): string {
   }
 }
 
-function keyStatusTone(status: ApiKeyStatusResult["keyStatus"]) {
-  if (status === "valid") {
-    return "success" as const;
-  }
-
-  if (status === "invalid") {
-    return "danger" as const;
-  }
-
-  return "warning" as const;
-}
-
 export default function App() {
   const [viewState, setViewState] = useState<ViewState>("invalid_launch_context");
   const [booting, setBooting] = useState(true);
   const [refreshingRepo, setRefreshingRepo] = useState(false);
+  const [generationNonce, setGenerationNonce] = useState(0);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
   const [repoContext, setRepoContext] = useState<RepoContextResult | null>(null);
   const [repoStatus, setRepoStatus] = useState<RepoStatusResult | null>(null);
@@ -201,11 +187,13 @@ export default function App() {
       return;
     }
 
+    const nextNonce = generationNonce + 1;
+    setGenerationNonce(nextNonce);
     setInlineError(null);
     setCopyState("idle");
     setViewState("generating");
 
-    const result = await generateCommitMessage(repoContext.repoRoot);
+    const result = await generateCommitMessage(repoContext.repoRoot, nextNonce);
     setGeneration(result);
 
     if (result.success && result.message) {
@@ -231,7 +219,6 @@ export default function App() {
     setCopyState(copied ? "copied" : "error");
   }
 
-  const statusTone = apiKeyStatus ? keyStatusTone(apiKeyStatus.keyStatus) : "warning";
   const generationError = generation && !generation.success ? describeError(generation.errorCode) : inlineError;
 
   return (
@@ -248,80 +235,26 @@ export default function App() {
         </section>
 
         <div className="grid">
-          <div className="stack">
-            <RepoSummary
-              repoContext={repoContext}
-              repoStatus={repoStatus}
-              booting={booting}
-              viewState={viewState}
-              refreshingRepo={refreshingRepo}
-              onRefresh={() => refreshRepoState({ preserveViewState: true })}
-            />
+          <RepoSummary
+            repoContext={repoContext}
+            repoStatus={repoStatus}
+            booting={booting}
+            viewState={viewState}
+            refreshingRepo={refreshingRepo}
+            onRefresh={() => refreshRepoState({ preserveViewState: true })}
+          />
 
-            <GeneratorPanel
-              viewState={viewState}
-              repoStatus={repoStatus}
-              generation={generation}
-              copyState={copyState}
-              booting={booting}
-              inlineError={generationError}
-              onGenerate={handleGenerate}
-              onCopy={handleCopy}
-            />
-          </div>
-
-          <div className="stack">
-            <Panel
-              title="Credential Status"
-              subtitle="Gemini keys live in your OS credential store. GitRoast only keeps metadata locally."
-              aside={
-                apiKeyStatus ? (
-                  <StatusPill tone={statusTone}>
-                    {apiKeyStatus.keyStatus}
-                  </StatusPill>
-                ) : undefined
-              }
-            >
-              <div className="detail-list">
-                <div className="detail-row">
-                  <span className="detail-label">Provider</span>
-                  <span className="detail-value">
-                    {apiKeyStatus?.providerName ?? "gemini"}
-                  </span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Model</span>
-                  <span className="detail-value">
-                    {apiKeyStatus?.modelName ?? "gemini-2.5-flash"}
-                  </span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Source</span>
-                  <span className="detail-value">
-                    {apiKeyStatus?.keySource ?? "Project env not found"}
-                  </span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Validated</span>
-                  <span className="detail-value">
-                    {apiKeyStatus?.lastValidatedAt ?? "Not yet"}
-                  </span>
-                </div>
-              </div>
-            </Panel>
-
-            <ApiKeyForm
-              viewState={viewState}
-              apiKeyStatus={apiKeyStatus}
-              inlineError={inlineError}
-            />
-          </div>
+          <GeneratorPanel
+            viewState={viewState}
+            repoStatus={repoStatus}
+            generation={generation}
+            copyState={copyState}
+            booting={booting}
+            inlineError={generationError}
+            onGenerate={handleGenerate}
+            onCopy={handleCopy}
+          />
         </div>
-
-        <footer className="footer-note">
-          Launch GitRoast from a repository with <code>--cwd</code> so the app
-          can stay scoped to your staged changes.
-        </footer>
       </div>
     </main>
   );

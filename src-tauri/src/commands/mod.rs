@@ -114,7 +114,10 @@ pub fn get_api_key_status(launch: State<'_, LaunchContext>) -> ApiKeyStatusResul
 }
 
 #[tauri::command]
-pub async fn generate_commit_message(repo_root: String) -> GenerateCommitMessageResult {
+pub async fn generate_commit_message(
+    repo_root: String,
+    generation_nonce: u32,
+) -> GenerateCommitMessageResult {
     let repo_path = Path::new(&repo_root);
     let (api_key, key_source) = match secure_store::read_api_key(repo_path) {
         Ok(api_key) => api_key,
@@ -134,7 +137,7 @@ pub async fn generate_commit_message(repo_root: String) -> GenerateCommitMessage
         return GenerateCommitMessageResult::failure("diff_too_large");
     }
 
-    match ai::generate_commit_message(&api_key, &diff).await {
+    match ai::generate_commit_message(&api_key, &diff, generation_nonce).await {
         Ok(message) => {
             let mut config = load_app_config().unwrap_or_default();
             config.key_status = KeyStatus::Valid;
