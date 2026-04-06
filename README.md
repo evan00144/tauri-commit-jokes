@@ -23,6 +23,7 @@ GitRoast is a Tauri desktop utility that reads staged Git changes from the curre
 - Rust MSVC toolchain
 - WebView2 runtime
 - Visual Studio C++ build tools
+- optional WSL if you want GitRoast to inspect repos stored inside a Linux distro
 
 ### Linux
 
@@ -59,6 +60,20 @@ scripts/cli/gitroast.sh
 ```
 
 The launcher preserves the directory you run it from and passes it into the Tauri app as `--cwd <path>`.
+
+### Windows + WSL repos
+
+The packaged Windows app can inspect staged changes inside WSL repositories when the repo path is provided as a WSL UNC path such as:
+
+```text
+\\wsl$\Ubuntu\home\evan\my-project
+```
+
+GitRoast detects that path shape and routes Git commands through `wsl.exe` instead of Windows Git.
+
+Practical usage:
+- use `Choose repo root` and pick the repo under `\\wsl$`
+- or launch the app from a Windows shell already pointed at the WSL UNC path
 
 ## Build
 
