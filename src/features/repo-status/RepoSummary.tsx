@@ -66,7 +66,7 @@ export function RepoSummary({
   return (
     <Panel
       title="Repository Context"
-      subtitle="GitRoast reads staged Git changes from the selected repo root or the directory that launched the app."
+      subtitle="Repository inspection stays local. GitRoast reads staged Git changes from the selected repo root and only sends data when you generate."
       aside={
         <div className="panel-actions">
           <StatusPill tone={tone}>{contextLabel(viewState)}</StatusPill>
@@ -100,7 +100,7 @@ export function RepoSummary({
       <div className="fact-list">
         <div className="fact-row">
           <span className="fact-label">Launch path</span>
-          <span className="fact-value">{launchPath || "Not set"}</span>
+          <span className="fact-value fact-value-path">{launchPath || "Not set"}</span>
         </div>
         <div className="fact-row">
           <span className="fact-label">Repository</span>
@@ -108,7 +108,7 @@ export function RepoSummary({
         </div>
         <div className="fact-row">
           <span className="fact-label">Root</span>
-          <span className="fact-value">{repoRoot}</span>
+          <span className="fact-value fact-value-path">{repoRoot}</span>
         </div>
         <div className="fact-row">
           <span className="fact-label">Git available</span>

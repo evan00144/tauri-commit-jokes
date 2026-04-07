@@ -1,3 +1,8 @@
+# Archived Note
+
+This implementation plan describes the original Gemini BYOK MVP and is kept for historical planning context.
+The current GitRoast desktop app uses a hosted commit-joke API and does not require local user API keys or client-side model selection.
+
 # GitRoast MVP Implementation Plan
 
 **Goal:** Build a Tauri desktop app that launches from the current repository, reads staged Git changes, generates one humorous commit message with Gemini 2.5 Flash, and lets the user copy the result.

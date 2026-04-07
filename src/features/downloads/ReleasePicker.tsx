@@ -130,7 +130,7 @@ export function ReleasePicker({ onOpenExternal }: ReleasePickerProps) {
   return (
     <Panel
       title="Download Releases"
-      subtitle="Pick a GitHub release tag, then open the packaged asset you want for your platform."
+      subtitle="Browse packaged desktop builds from GitHub Releases and open the installer or archive that matches your platform."
       aside={
         loading ? (
           <StatusPill tone="warning">Loading releases</StatusPill>
@@ -188,7 +188,7 @@ export function ReleasePicker({ onOpenExternal }: ReleasePickerProps) {
               }}
             >
               <span className="download-chip-title">{asset.name}</span>
-              <span className="download-chip-meta">Open download</span>
+              <span className="download-chip-meta">Open installer</span>
             </button>
           ))
         ) : (

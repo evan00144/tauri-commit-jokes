@@ -24,8 +24,8 @@ export function ServicePanel({
 
   return (
     <Panel
-      title="API Backend"
-      subtitle="GitRoast sends staged git text to the hosted commit-joke API. No local model picker or API key input is required."
+      title="Service Health"
+      subtitle="GitRoast calls a hosted commit generation service. The desktop app does not ask for Gemini, OpenRouter, or any local API key."
       aside={<StatusPill tone={tone}>{label}</StatusPill>}
     >
       <div className="detail-list">
@@ -46,11 +46,11 @@ export function ServicePanel({
           <span className="detail-value">{serviceStatus?.modelName ?? "API default"}</span>
         </div>
         <div className="detail-row">
-          <span className="detail-label">Client auth</span>
-          <span className="detail-value">None</span>
+          <span className="detail-label">Desktop client</span>
+          <span className="detail-value">Public app build</span>
         </div>
         <div className="detail-row">
-          <span className="detail-label">Sent by app</span>
+          <span className="detail-label">Generation payload</span>
           <span className="detail-value">Staged status plus staged diff</span>
         </div>
       </div>
@@ -70,8 +70,8 @@ export function ServicePanel({
 
       {!serviceStatus?.ok ? (
         <p className="error-copy">
-          The health check is failing right now. You can still try `Generate`, but the backend may
-          reject the request until the service recovers.
+          The health check is failing right now. Generation may still be attempted, but the hosted
+          service can reject requests until it recovers.
         </p>
       ) : null}
 

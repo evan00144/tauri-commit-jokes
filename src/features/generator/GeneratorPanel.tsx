@@ -21,17 +21,17 @@ type GeneratorPanelProps = {
 function renderStateCopy(viewState: ViewState) {
   switch (viewState) {
     case "invalid_launch_context":
-      return "Launch GitRoast from a repository so it can read the staged diff.";
+      return "Point GitRoast at a valid repository before requesting a generated commit message.";
     case "no_staged_changes":
-      return "Stage files first, then come back for the roast.";
+      return "Stage files first, then generate from the exact diff you intend to commit.";
     case "ready_to_generate":
-      return "Everything is ready. Generate one commit message from the staged diff.";
+      return "Everything is ready. Generate one hosted commit suggestion from the staged diff.";
     case "generating":
-      return "The hosted commit-joke API is chewing through the diff and looking for material.";
+      return "GitRoast is submitting the staged diff to the hosted service and waiting on one response.";
     case "generation_success":
-      return "One commit message, ready to copy.";
+      return "One generated commit message is ready to review and copy.";
     case "generation_error":
-      return "Generation failed. Fix the issue below and try again.";
+      return "Generation failed. Review the service state below and try again.";
     default:
       return "GitRoast is checking the current launch context.";
   }
@@ -60,7 +60,7 @@ export function GeneratorPanel({
   return (
     <Panel
       title="Commit Generator"
-      subtitle={`${renderStateCopy(viewState)} Backend model: ${activeModel}.`}
+      subtitle={`${renderStateCopy(viewState)} Active backend model: ${activeModel}.`}
       aside={
         <StatusPill
           tone={
@@ -84,8 +84,8 @@ export function GeneratorPanel({
         ) : (
           <p className="muted">
             {repoStatus?.hasStagedChanges
-              ? "No message generated yet."
-              : "Waiting for a valid staged diff."}
+              ? "No commit message has been generated for the current staged diff yet."
+              : "Waiting for a valid staged diff before generation can start."}
           </p>
         )}
 
