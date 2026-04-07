@@ -1,19 +1,14 @@
-use std::{
-    path::Path,
-    sync::{Mutex, OnceLock},
-};
+use std::path::Path;
 
-use chrono::Utc;
 use rfd::FileDialog;
 use tauri::State;
 
 use crate::{
     ai, git,
     models::{
-        load_app_config, save_app_config, ApiKeyStatusResult, GenerateCommitMessageResult,
-        KeyStatus, RepoContextResult, RepoStatusResult, PROMPT_VERSION,
+        GenerateCommitMessageResult, RepoContextResult, RepoStatusResult, ServiceStatusResult,
+        DIFF_BYTE_LIMIT, PROMPT_VERSION,
     },
-    secure_store,
 };
 
 #[derive(Clone)]
@@ -25,89 +20,12 @@ pub struct AppState {
     pub launch: LaunchContext,
 }
 
-static SESSION_API_KEY: OnceLock<Mutex<Option<String>>> = OnceLock::new();
-
 fn active_launch_path(input: &str, launch: &LaunchContext) -> String {
     if input.trim().is_empty() {
         return launch.cwd.clone().unwrap_or_default();
     }
 
     input.trim().to_string()
-}
-
-fn repo_root_from_launch(launch: &LaunchContext) -> Option<std::path::PathBuf> {
-    let launch_path = launch.cwd.as_deref()?;
-    git::resolve_repo_root(launch_path).ok()
-}
-
-fn session_api_key_store() -> &'static Mutex<Option<String>> {
-    SESSION_API_KEY.get_or_init(|| Mutex::new(None))
-}
-
-fn read_session_api_key() -> Option<String> {
-    session_api_key_store()
-        .lock()
-        .ok()
-        .and_then(|value| value.as_ref().cloned())
-}
-
-fn read_api_key(repo_root: &Path) -> Result<(String, String), crate::models::AppError> {
-    if let Some(api_key) = read_session_api_key() {
-        return Ok((api_key, "session input".into()));
-    }
-
-    secure_store::read_api_key_from_env(repo_root)
-}
-
-fn has_api_key(repo_root: &Path) -> Result<Option<String>, crate::models::AppError> {
-    if read_session_api_key().is_some() {
-        return Ok(Some("session input".into()));
-    }
-
-    secure_store::has_env_api_key(repo_root)
-}
-
-fn resolved_api_key_status(active_cwd: &str, state: &AppState) -> ApiKeyStatusResult {
-    let mut config = load_app_config().unwrap_or_default();
-
-    let repo_root = if active_cwd.trim().is_empty() {
-        repo_root_from_launch(&state.launch)
-    } else {
-        git::resolve_repo_root(active_cwd).ok()
-    };
-
-    let resolved_model =
-        secure_store::read_model().unwrap_or_else(|_| crate::models::ResolvedModel {
-            model_name: secure_store::default_model_name().into(),
-            model_source: "default".into(),
-            model_warning: None,
-        });
-    config.model_name = resolved_model.model_name.clone();
-
-    let Some(repo_root) = repo_root else {
-        config.key_status = KeyStatus::Missing;
-        config.key_source = None;
-        return ApiKeyStatusResult::from_config(&config, false, &resolved_model);
-    };
-
-    match has_api_key(&repo_root) {
-        Ok(Some(source)) => {
-            if matches!(config.key_status, KeyStatus::Missing) {
-                config.key_status = KeyStatus::Saved;
-            }
-            config.key_source = Some(source);
-            ApiKeyStatusResult::from_config(&config, true, &resolved_model)
-        }
-        Ok(None) => {
-            config.key_status = KeyStatus::Missing;
-            config.key_source = None;
-            ApiKeyStatusResult::from_config(&config, false, &resolved_model)
-        }
-        Err(_) => {
-            config.key_source = None;
-            ApiKeyStatusResult::from_config(&config, false, &resolved_model)
-        }
-    }
 }
 
 #[tauri::command]
@@ -164,145 +82,52 @@ pub fn get_repo_status(repo_root: String) -> RepoStatusResult {
 }
 
 #[tauri::command]
-pub fn get_api_key_status(cwd: String, state: State<'_, AppState>) -> ApiKeyStatusResult {
-    let active_cwd = active_launch_path(&cwd, &state.launch);
-    resolved_api_key_status(&active_cwd, &state)
-}
-
-#[tauri::command]
-pub fn set_session_api_key(
-    cwd: String,
-    api_key: String,
-    state: State<'_, AppState>,
-) -> ApiKeyStatusResult {
-    if let Ok(mut session_key) = session_api_key_store().lock() {
-        let trimmed = api_key.trim().to_string();
-        if trimmed.is_empty() {
-            *session_key = None;
-        } else {
-            *session_key = Some(trimmed);
-        }
+pub async fn get_service_status() -> ServiceStatusResult {
+    match ai::get_service_health().await {
+        Ok(health) => ServiceStatusResult::available(health.service, health.model),
+        Err(error) => ServiceStatusResult::unavailable(error.error_code()),
     }
-
-    let mut config = load_app_config().unwrap_or_default();
-    config.key_status = KeyStatus::Saved;
-    config.key_source = Some("session input".into());
-    let _ = save_app_config(&config);
-
-    let active_cwd = active_launch_path(&cwd, &state.launch);
-    resolved_api_key_status(&active_cwd, &state)
 }
 
 #[tauri::command]
-pub fn clear_session_api_key(cwd: String, state: State<'_, AppState>) -> ApiKeyStatusResult {
-    if let Ok(mut session_key) = session_api_key_store().lock() {
-        *session_key = None;
-    }
-
-    let active_cwd = active_launch_path(&cwd, &state.launch);
-    resolved_api_key_status(&active_cwd, &state)
-}
-
-#[tauri::command]
-pub fn set_model_preference(
-    cwd: String,
-    model_name: String,
-    state: State<'_, AppState>,
-) -> ApiKeyStatusResult {
-    let mut config = load_app_config().unwrap_or_default();
-    let requested_model = model_name.trim();
-
-    config.model_name = if requested_model.is_empty() {
-        secure_store::default_model_name().into()
-    } else {
-        requested_model.into()
-    };
-    let _ = save_app_config(&config);
-
-    let active_cwd = active_launch_path(&cwd, &state.launch);
-    resolved_api_key_status(&active_cwd, &state)
-}
-
-#[tauri::command]
-pub async fn generate_commit_message(
-    repo_root: String,
-    generation_nonce: u32,
-) -> GenerateCommitMessageResult {
+pub async fn generate_commit_message(repo_root: String) -> GenerateCommitMessageResult {
     let repo_path = Path::new(&repo_root);
-    let resolved_model = match secure_store::read_model() {
-        Ok(model) => model,
-        Err(error) => {
-            return GenerateCommitMessageResult::failure(
-                error.error_code(),
-                secure_store::default_model_name(),
-            )
-        }
-    };
-    let (api_key, key_source) = match read_api_key(repo_path) {
-        Ok(api_key) => api_key,
-        Err(error) => {
-            return GenerateCommitMessageResult::failure(
-                error.error_code(),
-                &resolved_model.model_name,
-            )
-        }
+
+    let staged_status = match git::read_staged_name_status(repo_path) {
+        Ok(status) => status,
+        Err(error) => return GenerateCommitMessageResult::failure(error.error_code()),
     };
 
     let diff = match git::read_staged_diff(repo_path) {
         Ok(diff) => diff,
-        Err(error) => {
-            return GenerateCommitMessageResult::failure(
-                error.error_code(),
-                &resolved_model.model_name,
-            )
-        }
+        Err(error) => return GenerateCommitMessageResult::failure(error.error_code()),
     };
 
-    if diff.trim().is_empty() {
-        return GenerateCommitMessageResult::failure(
-            "no_staged_changes",
-            &resolved_model.model_name,
-        );
+    if staged_status.trim().is_empty() && diff.trim().is_empty() {
+        return GenerateCommitMessageResult::failure("no_staged_changes");
     }
 
-    if diff.len() > crate::models::DIFF_BYTE_LIMIT {
-        return GenerateCommitMessageResult::failure("diff_too_large", &resolved_model.model_name);
+    if diff.len() > DIFF_BYTE_LIMIT {
+        return GenerateCommitMessageResult::failure("diff_too_large");
     }
 
-    match ai::generate_commit_message(
-        &api_key,
-        &resolved_model.model_name,
-        &diff,
-        generation_nonce,
-    )
-    .await
-    {
-        Ok(message) => {
-            let mut config = load_app_config().unwrap_or_default();
-            config.key_status = KeyStatus::Valid;
-            config.key_source = Some(key_source);
-            config.model_name = resolved_model.model_name.clone();
-            config.last_validated_at = Some(Utc::now().to_rfc3339());
-            let _ = save_app_config(&config);
-            GenerateCommitMessageResult {
-                success: true,
-                message: Some(message),
-                model_name: resolved_model.model_name,
-                prompt_version: PROMPT_VERSION.into(),
-                error_code: None,
-            }
-        }
-        Err(error) => {
-            if error.error_code() == "invalid_api_key" {
-                let mut config = load_app_config().unwrap_or_default();
-                config.key_status = KeyStatus::Invalid;
-                config.key_source = Some(key_source);
-                config.model_name = resolved_model.model_name.clone();
-                config.last_validated_at = None;
-                let _ = save_app_config(&config);
-            }
+    let request_message = if staged_status.trim().is_empty() {
+        format!("GIT DIFF\n{diff}")
+    } else if diff.trim().is_empty() {
+        format!("GIT STATUS\n{staged_status}")
+    } else {
+        format!("GIT STATUS\n{staged_status}\n\nGIT DIFF\n{diff}")
+    };
 
-            GenerateCommitMessageResult::failure(error.error_code(), &resolved_model.model_name)
-        }
+    match ai::generate_commit_message(&request_message).await {
+        Ok(payload) => GenerateCommitMessageResult {
+            success: true,
+            message: Some(payload.commit_message),
+            analysis: Some(payload.analysis),
+            model_name: payload.model,
+            prompt_version: PROMPT_VERSION.into(),
+            error_code: None,
+        },
+        Err(error) => GenerateCommitMessageResult::failure(error.error_code()),
     }
 }

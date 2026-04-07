@@ -1,26 +1,23 @@
 import { useEffect, useState } from "react";
 import "../App.css";
 import { ReleasePicker } from "../features/downloads/ReleasePicker";
-import { ApiKeyForm } from "../features/onboarding/ApiKeyForm";
 import { GeneratorPanel } from "../features/generator/GeneratorPanel";
+import { ServicePanel } from "../features/onboarding/ApiKeyForm";
 import { RepoSummary } from "../features/repo-status/RepoSummary";
 import { copyText } from "../lib/clipboard";
 import {
-  clearSessionApiKey,
   chooseRepoRoot,
   generateCommitMessage,
-  getApiKeyStatus,
   getRepoStatus,
+  getServiceStatus,
   initContext,
   openExternal,
-  setSessionApiKey,
-  setModelPreference,
 } from "../lib/tauri";
 import type {
-  ApiKeyStatusResult,
   GenerateCommitMessageResult,
   RepoContextResult,
   RepoStatusResult,
+  ServiceStatusResult,
   ViewState,
 } from "../types/contracts";
 
@@ -29,21 +26,17 @@ function describeError(errorCode: string | null): string {
     case "git_unavailable":
       return "Git is unavailable on this machine. Install Git or fix your PATH, then relaunch GitRoast from a repository.";
     case "not_a_repo":
-      return "This launch path is not inside a Git repository. Run gitroast from a project folder instead.";
+      return "This launch path is not inside a Git repository. Run GitRoast from a project folder instead.";
     case "no_staged_changes":
       return "There are no staged changes yet. Run git add first, then generate again.";
-    case "missing_api_key":
-      return "Add a Gemini API key to `.env.local`, `.env`, or shell env before generation is allowed.";
-    case "invalid_api_key":
-      return "The Gemini API key from your env was rejected. Replace it and try again.";
     case "quota_exhausted":
-      return "The selected Gemini model is hitting quota limits for this project. Pick a lighter Gemini model in the app settings or wait for quota to reset.";
+      return "The hosted commit-joke API is rate limited right now. Retry once the upstream quota cools down.";
     case "diff_too_large":
-      return "The staged diff is larger than the MVP limit of 250 KB.";
+      return "The staged diff is larger than the current 250 KB limit.";
     case "provider_timeout":
-      return "Gemini timed out before responding. Retry once your connection is stable.";
+      return "The hosted commit-joke API timed out before responding. Retry once your connection is stable.";
     case "provider_error":
-      return "Gemini returned an unexpected error. Retry or check the provider status.";
+      return "The hosted commit-joke API returned an unexpected error. Retry or check the backend status.";
     default:
       return "GitRoast hit an unexpected error. Retry the action or relaunch the app.";
   }
@@ -53,27 +46,20 @@ export default function App() {
   const [viewState, setViewState] = useState<ViewState>("invalid_launch_context");
   const [booting, setBooting] = useState(true);
   const [refreshingRepo, setRefreshingRepo] = useState(false);
+  const [refreshingService, setRefreshingService] = useState(false);
   const [switchingRepo, setSwitchingRepo] = useState(false);
-  const [savingApiKey, setSavingApiKey] = useState(false);
-  const [savingModel, setSavingModel] = useState(false);
-  const [generationNonce, setGenerationNonce] = useState(0);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
   const [launchPath, setLaunchPath] = useState(window.__GITROAST_CWD__ ?? "");
   const [repoContext, setRepoContext] = useState<RepoContextResult | null>(null);
   const [repoStatus, setRepoStatus] = useState<RepoStatusResult | null>(null);
-  const [apiKeyStatus, setApiKeyStatus] = useState<ApiKeyStatusResult | null>(null);
+  const [serviceStatus, setServiceStatus] = useState<ServiceStatusResult | null>(null);
   const [generation, setGeneration] = useState<GenerateCommitMessageResult | null>(null);
   const [inlineError, setInlineError] = useState<string | null>(null);
 
   function resolveViewState(
-    keyStatus: ApiKeyStatusResult | null,
     status: RepoStatusResult | null,
     previousState?: ViewState,
   ): ViewState {
-    if (!keyStatus?.keyPresent || keyStatus.keyStatus === "missing") {
-      return "missing_api_key";
-    }
-
     if (!status?.hasStagedChanges || status.errorCode === "no_staged_changes") {
       return "no_staged_changes";
     }
@@ -99,18 +85,20 @@ export default function App() {
 
     if (!context.gitAvailable || !context.isRepo || !context.repoRoot) {
       setRepoStatus(null);
-      setApiKeyStatus(null);
+      setServiceStatus(null);
       setViewState("invalid_launch_context");
       setBooting(false);
       return;
     }
 
-    const keyStatus = await getApiKeyStatus(nextLaunchPath);
-    setApiKeyStatus(keyStatus);
+    const [nextServiceStatus, status] = await Promise.all([
+      getServiceStatus(),
+      getRepoStatus(context.repoRoot),
+    ]);
 
-    const status = await getRepoStatus(context.repoRoot);
+    setServiceStatus(nextServiceStatus);
     setRepoStatus(status);
-    setViewState(resolveViewState(keyStatus, status));
+    setViewState(resolveViewState(status));
     setBooting(false);
   }
 
@@ -141,11 +129,26 @@ export default function App() {
       const status = await getRepoStatus(repoContext.repoRoot);
       setRepoStatus(status);
       setViewState((current) =>
-        resolveViewState(apiKeyStatus, status, preserveViewState ? current : undefined),
+        resolveViewState(status, preserveViewState ? current : undefined),
       );
     } finally {
       if (!silent) {
         setRefreshingRepo(false);
+      }
+    }
+  }
+
+  async function refreshServiceState({ silent = false }: { silent?: boolean } = {}) {
+    if (!silent) {
+      setRefreshingService(true);
+    }
+
+    try {
+      const nextServiceStatus = await getServiceStatus();
+      setServiceStatus(nextServiceStatus);
+    } finally {
+      if (!silent) {
+        setRefreshingService(false);
       }
     }
   }
@@ -155,49 +158,49 @@ export default function App() {
       return;
     }
 
-    const syncRepoState = () => {
+    const syncVisibleState = () => {
       void refreshRepoState({ preserveViewState: true, silent: true });
+      void refreshServiceState({ silent: true });
     };
-    window.addEventListener("focus", syncRepoState);
+
+    window.addEventListener("focus", syncVisibleState);
 
     const handleVisibilityChange = () => {
       if (!document.hidden) {
-        syncRepoState();
+        syncVisibleState();
       }
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      window.removeEventListener("focus", syncRepoState);
+      window.removeEventListener("focus", syncVisibleState);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [repoContext?.repoRoot, apiKeyStatus?.keyPresent]);
+  }, [repoContext?.repoRoot]);
 
   async function handleGenerate() {
     if (!repoContext?.repoRoot) {
       return;
     }
 
-    const nextNonce = generationNonce + 1;
-    setGenerationNonce(nextNonce);
     setInlineError(null);
     setCopyState("idle");
     setViewState("generating");
 
-    const result = await generateCommitMessage(repoContext.repoRoot, nextNonce);
+    const result = await generateCommitMessage(repoContext.repoRoot);
     setGeneration(result);
 
     if (result.success && result.message) {
-      const nextKeyStatus = await getApiKeyStatus(launchPath);
-      setApiKeyStatus(nextKeyStatus);
-      await refreshRepoState({ preserveViewState: true });
+      await Promise.all([
+        refreshRepoState({ preserveViewState: true }),
+        refreshServiceState({ silent: true }),
+      ]);
       setViewState("generation_success");
       return;
     }
 
-    const nextKeyStatus = await getApiKeyStatus(launchPath);
-    setApiKeyStatus(nextKeyStatus);
+    await refreshServiceState({ silent: true });
     setInlineError(describeError(result.errorCode));
     setViewState("generation_error");
   }
@@ -227,45 +230,6 @@ export default function App() {
     setCopyState(copied ? "copied" : "error");
   }
 
-  async function handleSaveSessionApiKey(apiKey: string) {
-    setSavingApiKey(true);
-    setInlineError(null);
-
-    try {
-      const nextKeyStatus = await setSessionApiKey(launchPath, apiKey);
-      setApiKeyStatus(nextKeyStatus);
-      setViewState((current) => resolveViewState(nextKeyStatus, repoStatus, current));
-    } finally {
-      setSavingApiKey(false);
-    }
-  }
-
-  async function handleClearSessionApiKey() {
-    setSavingApiKey(true);
-    setInlineError(null);
-
-    try {
-      const nextKeyStatus = await clearSessionApiKey(launchPath);
-      setApiKeyStatus(nextKeyStatus);
-      setViewState((current) => resolveViewState(nextKeyStatus, repoStatus, current));
-    } finally {
-      setSavingApiKey(false);
-    }
-  }
-
-  async function handleSaveModel(modelName: string) {
-    setSavingModel(true);
-    setInlineError(null);
-
-    try {
-      const nextKeyStatus = await setModelPreference(launchPath, modelName);
-      setApiKeyStatus(nextKeyStatus);
-      setViewState((current) => resolveViewState(nextKeyStatus, repoStatus, current));
-    } finally {
-      setSavingModel(false);
-    }
-  }
-
   async function handleOpenExternal(url: string) {
     try {
       await openExternal(url);
@@ -274,8 +238,9 @@ export default function App() {
     }
   }
 
-  const generationError = generation && !generation.success ? describeError(generation.errorCode) : inlineError;
-  const activeModel = apiKeyStatus?.modelName ?? "gemini-2.5-flash";
+  const generationError =
+    generation && !generation.success ? describeError(generation.errorCode) : inlineError;
+  const activeModel = serviceStatus?.modelName ?? "API default";
   const tutorialSteps = [
     {
       step: "01",
@@ -290,7 +255,7 @@ export default function App() {
     {
       step: "03",
       title: "Generate and copy",
-      body: "Pick a Gemini model, click `Generate`, then copy the least embarrassing joke into your normal commit flow.",
+      body: "Click `Generate`, then copy the least embarrassing joke into your normal commit flow.",
     },
   ];
 
@@ -302,8 +267,8 @@ export default function App() {
           <h1>Read the staged diff. Roast the commit. Keep moving.</h1>
           <p>
             GitRoast opens in your current repository, checks staged changes,
-            sends them to {activeModel}, and gives you one commit message
-            worth copying.
+            sends them to the hosted commit-joke API, and gives you one commit
+            message worth copying. Current backend model: {activeModel}.
           </p>
           <div className="hero-actions hero-actions-primary">
             <button
@@ -362,7 +327,7 @@ export default function App() {
             <div>
               <h2 className="panel-title">How GitRoast Works</h2>
               <p className="panel-subtitle">
-                One fast loop. No hidden Git magic. No auto-commit.
+                One fast loop. No hidden Git magic. No local key setup. No auto-commit.
               </p>
             </div>
             <div className="tutorial-badge">3-step setup</div>
@@ -385,7 +350,6 @@ export default function App() {
             <RepoSummary
               repoContext={repoContext}
               repoStatus={repoStatus}
-              apiKeyStatus={apiKeyStatus}
               booting={booting}
               viewState={viewState}
               refreshingRepo={refreshingRepo || switchingRepo}
@@ -393,15 +357,11 @@ export default function App() {
               onChooseRepo={handleChooseRepo}
               onRefresh={() => refreshRepoState({ preserveViewState: true })}
             />
-            <ApiKeyForm
-              viewState={viewState}
-              apiKeyStatus={apiKeyStatus}
-              savingApiKey={savingApiKey}
-              savingModel={savingModel}
-              inlineError={viewState === "missing_api_key" ? generationError : null}
-              onSaveSessionApiKey={handleSaveSessionApiKey}
-              onClearSessionApiKey={handleClearSessionApiKey}
-              onSaveModel={handleSaveModel}
+            <ServicePanel
+              serviceStatus={serviceStatus}
+              refreshingService={refreshingService}
+              inlineError={generationError}
+              onRefresh={refreshServiceState}
             />
           </div>
 

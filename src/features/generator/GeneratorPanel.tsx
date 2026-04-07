@@ -20,8 +20,6 @@ type GeneratorPanelProps = {
 
 function renderStateCopy(viewState: ViewState) {
   switch (viewState) {
-    case "missing_api_key":
-      return "Add your Gemini API key to `.env.local`, `.env`, or shell env to unlock generation.";
     case "invalid_launch_context":
       return "Launch GitRoast from a repository so it can read the staged diff.";
     case "no_staged_changes":
@@ -29,7 +27,7 @@ function renderStateCopy(viewState: ViewState) {
     case "ready_to_generate":
       return "Everything is ready. Generate one commit message from the staged diff.";
     case "generating":
-      return "Gemini is chewing through the diff and looking for material.";
+      return "The hosted commit-joke API is chewing through the diff and looking for material.";
     case "generation_success":
       return "One commit message, ready to copy.";
     case "generation_error":
@@ -62,7 +60,7 @@ export function GeneratorPanel({
   return (
     <Panel
       title="Commit Generator"
-      subtitle={`${renderStateCopy(viewState)} Using ${activeModel}.`}
+      subtitle={`${renderStateCopy(viewState)} Backend model: ${activeModel}.`}
       aside={
         <StatusPill
           tone={
@@ -79,7 +77,10 @@ export function GeneratorPanel({
     >
       <div className="message-box">
         {generation?.success && generation.message ? (
-          <pre>{generation.message}</pre>
+          <>
+            <pre>{generation.message}</pre>
+            {generation.analysis ? <p className="muted">{generation.analysis}</p> : null}
+          </>
         ) : (
           <p className="muted">
             {repoStatus?.hasStagedChanges

@@ -1,6 +1,4 @@
 export type ErrorCode =
-  | "missing_api_key"
-  | "invalid_api_key"
   | "quota_exhausted"
   | "git_unavailable"
   | "not_a_repo"
@@ -10,7 +8,6 @@ export type ErrorCode =
   | "provider_error";
 
 export type ViewState =
-  | "missing_api_key"
   | "invalid_launch_context"
   | "no_staged_changes"
   | "ready_to_generate"
@@ -36,23 +33,18 @@ export type RepoStatusResult = {
   errorCode: ErrorCode | null;
 };
 
-export type ApiKeyStatusResult = {
-  providerName: "gemini";
+export type ServiceStatusResult = {
+  ok: boolean;
+  serviceName: string;
   modelName: string;
-  modelSource: string;
-  modelWarning: string | null;
-  supportedModels: string[];
-  acceptedKeyNames: string[];
-  keyPresent: boolean;
-  keyStatus: "missing" | "saved" | "valid" | "invalid";
-  keySource: string | null;
-  lastValidatedAt: string | null;
+  baseUrl: string;
   errorCode: ErrorCode | null;
 };
 
 export type GenerateCommitMessageResult = {
   success: boolean;
   message: string | null;
+  analysis: string | null;
   modelName: string;
   promptVersion: string;
   errorCode: ErrorCode | null;

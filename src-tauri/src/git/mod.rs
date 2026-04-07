@@ -151,6 +151,17 @@ pub fn read_staged_diff(repo_root: &Path) -> Result<String, AppError> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+pub fn read_staged_name_status(repo_root: &Path) -> Result<String, AppError> {
+    let context = execution_context_from_path(repo_root);
+    let output = run_git(&context, &["diff", "--staged", "--name-status"])?;
+
+    if !output.status.success() {
+        return Err(AppError::NotARepo);
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
 pub fn read_repo_status(repo_root: &Path) -> Result<RepoStatusSnapshot, AppError> {
     let context = execution_context_from_path(repo_root);
     let diff = read_staged_diff(repo_root)?;

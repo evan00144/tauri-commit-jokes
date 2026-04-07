@@ -1,25 +1,15 @@
 use std::{
-    fs, io,
+    io,
     path::{Path, PathBuf},
 };
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use thiserror::Error;
 
-pub const PROVIDER_NAME: &str = "gemini";
-pub const DEFAULT_MODEL_NAME: &str = "gemini-2.5-flash";
-pub const MODEL_PRESET_NAMES: [&str; 7] = [
-    "gemini-3.1-pro",
-    "gemini-3-flash",
-    "gemini-3.1-flash-lite",
-    "gemini-2.5-pro",
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
-    "gemini-flash-latest",
-];
-pub const PROMPT_VERSION: &str = "v2";
+pub const API_BASE_URL: &str = "https://tauri-silly.evannave.site";
+pub const DEFAULT_MODEL_NAME: &str = "server default";
+pub const PROMPT_VERSION: &str = "api-v1";
 pub const DIFF_BYTE_LIMIT: usize = 250 * 1024;
-pub const ENV_KEY_NAMES: [&str; 2] = ["GEMINI_API_KEY", "GOOGLE_API_KEY"];
 
 #[derive(Debug, Error)]
 pub enum AppError {
@@ -27,10 +17,6 @@ pub enum AppError {
     GitUnavailable,
     #[error("Launch path is not a Git repository")]
     NotARepo,
-    #[error("Missing API key")]
-    MissingApiKey,
-    #[error("Invalid API key")]
-    InvalidApiKey,
     #[error("Quota exceeded")]
     QuotaExceeded,
     #[error("Provider timeout")]
@@ -50,89 +36,11 @@ impl AppError {
         match self {
             Self::GitUnavailable => "git_unavailable",
             Self::NotARepo => "not_a_repo",
-            Self::MissingApiKey => "missing_api_key",
-            Self::InvalidApiKey => "invalid_api_key",
             Self::QuotaExceeded => "quota_exhausted",
             Self::ProviderTimeout => "provider_timeout",
             Self::Provider(_) | Self::Git(_) | Self::Io(_) | Self::Json(_) => "provider_error",
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum KeyStatus {
-    #[default]
-    Missing,
-    Saved,
-    Valid,
-    Invalid,
-}
-
-impl KeyStatus {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Missing => "missing",
-            Self::Saved => "saved",
-            Self::Valid => "valid",
-            Self::Invalid => "invalid",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AppConfig {
-    pub onboarding_completed: bool,
-    pub provider_name: String,
-    pub model_name: String,
-    pub key_status: KeyStatus,
-    pub key_source: Option<String>,
-    pub last_validated_at: Option<String>,
-    pub prompt_version: String,
-}
-
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            onboarding_completed: false,
-            provider_name: PROVIDER_NAME.into(),
-            model_name: DEFAULT_MODEL_NAME.into(),
-            key_status: KeyStatus::Missing,
-            key_source: None,
-            last_validated_at: None,
-            prompt_version: PROMPT_VERSION.into(),
-        }
-    }
-}
-
-fn config_dir() -> Result<PathBuf, AppError> {
-    let base_dir = dirs::config_dir()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Unable to resolve config dir"))?;
-    Ok(base_dir.join("gitroast"))
-}
-
-fn config_path() -> Result<PathBuf, AppError> {
-    Ok(config_dir()?.join("config.json"))
-}
-
-pub fn load_app_config() -> Result<AppConfig, AppError> {
-    let path = config_path()?;
-
-    if !path.exists() {
-        return Ok(AppConfig::default());
-    }
-
-    let contents = fs::read_to_string(path)?;
-    Ok(serde_json::from_str(&contents)?)
-}
-
-pub fn save_app_config(config: &AppConfig) -> Result<(), AppError> {
-    let directory = config_dir()?;
-    let path = config_path()?;
-    fs::create_dir_all(directory)?;
-    fs::write(path, serde_json::to_string_pretty(config)?)?;
-    Ok(())
 }
 
 fn repo_name_from_path(path: &Path) -> Option<String> {
@@ -188,59 +96,34 @@ pub struct RepoStatusResult {
     pub error_code: Option<String>,
 }
 
-#[derive(Debug, Clone)]
-pub struct ResolvedModel {
-    pub model_name: String,
-    pub model_source: String,
-    pub model_warning: Option<String>,
-}
-
-impl ResolvedModel {
-    pub fn supported_models() -> Vec<String> {
-        MODEL_PRESET_NAMES
-            .iter()
-            .map(|value| (*value).to_string())
-            .collect()
-    }
-}
-
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ApiKeyStatusResult {
-    pub provider_name: String,
+pub struct ServiceStatusResult {
+    pub ok: bool,
+    pub service_name: String,
     pub model_name: String,
-    pub model_source: String,
-    pub model_warning: Option<String>,
-    pub supported_models: Vec<String>,
-    pub accepted_key_names: Vec<String>,
-    pub key_present: bool,
-    pub key_status: String,
-    pub key_source: Option<String>,
-    pub last_validated_at: Option<String>,
+    pub base_url: String,
     pub error_code: Option<String>,
 }
 
-impl ApiKeyStatusResult {
-    pub fn from_config(config: &AppConfig, key_present: bool, model: &ResolvedModel) -> Self {
+impl ServiceStatusResult {
+    pub fn available(service_name: String, model_name: String) -> Self {
         Self {
-            provider_name: config.provider_name.clone(),
-            model_name: model.model_name.clone(),
-            model_source: model.model_source.clone(),
-            model_warning: model.model_warning.clone(),
-            supported_models: ResolvedModel::supported_models(),
-            accepted_key_names: ENV_KEY_NAMES
-                .iter()
-                .map(|value| (*value).to_string())
-                .collect(),
-            key_present,
-            key_status: if key_present {
-                config.key_status.as_str().into()
-            } else {
-                "missing".into()
-            },
-            key_source: config.key_source.clone(),
-            last_validated_at: config.last_validated_at.clone(),
+            ok: true,
+            service_name,
+            model_name,
+            base_url: API_BASE_URL.into(),
             error_code: None,
+        }
+    }
+
+    pub fn unavailable(error_code: &str) -> Self {
+        Self {
+            ok: false,
+            service_name: "git-joke-commit-api".into(),
+            model_name: DEFAULT_MODEL_NAME.into(),
+            base_url: API_BASE_URL.into(),
+            error_code: Some(error_code.into()),
         }
     }
 }
@@ -250,17 +133,19 @@ impl ApiKeyStatusResult {
 pub struct GenerateCommitMessageResult {
     pub success: bool,
     pub message: Option<String>,
+    pub analysis: Option<String>,
     pub model_name: String,
     pub prompt_version: String,
     pub error_code: Option<String>,
 }
 
 impl GenerateCommitMessageResult {
-    pub fn failure(error_code: &str, model_name: &str) -> Self {
+    pub fn failure(error_code: &str) -> Self {
         Self {
             success: false,
             message: None,
-            model_name: model_name.into(),
+            analysis: None,
+            model_name: DEFAULT_MODEL_NAME.into(),
             prompt_version: PROMPT_VERSION.into(),
             error_code: Some(error_code.into()),
         }

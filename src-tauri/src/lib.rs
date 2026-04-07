@@ -2,7 +2,6 @@ mod ai;
 mod commands;
 mod git;
 mod models;
-mod secure_store;
 
 use commands::{AppState, LaunchContext};
 use tauri::Manager;
@@ -45,10 +44,7 @@ pub fn run() {
             commands::init_context,
             commands::choose_repo_root,
             commands::get_repo_status,
-            commands::get_api_key_status,
-            commands::set_session_api_key,
-            commands::clear_session_api_key,
-            commands::set_model_preference,
+            commands::get_service_status,
             commands::generate_commit_message
         ])
         .run(tauri::generate_context!())

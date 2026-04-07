@@ -1,10 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type {
-  ApiKeyStatusResult,
   GenerateCommitMessageResult,
   RepoContextResult,
   RepoStatusResult,
+  ServiceStatusResult,
 } from "../types/contracts";
 
 export function initContext(cwd: string) {
@@ -19,27 +19,12 @@ export function chooseRepoRoot() {
   return invoke<string | null>("choose_repo_root");
 }
 
-export function getApiKeyStatus(cwd: string) {
-  return invoke<ApiKeyStatusResult>("get_api_key_status", { cwd });
+export function getServiceStatus() {
+  return invoke<ServiceStatusResult>("get_service_status");
 }
 
-export function setSessionApiKey(cwd: string, apiKey: string) {
-  return invoke<ApiKeyStatusResult>("set_session_api_key", { cwd, apiKey });
-}
-
-export function clearSessionApiKey(cwd: string) {
-  return invoke<ApiKeyStatusResult>("clear_session_api_key", { cwd });
-}
-
-export function setModelPreference(cwd: string, modelName: string) {
-  return invoke<ApiKeyStatusResult>("set_model_preference", { cwd, modelName });
-}
-
-export function generateCommitMessage(repoRoot: string, generationNonce: number) {
-  return invoke<GenerateCommitMessageResult>("generate_commit_message", {
-    repoRoot,
-    generationNonce,
-  });
+export function generateCommitMessage(repoRoot: string) {
+  return invoke<GenerateCommitMessageResult>("generate_commit_message", { repoRoot });
 }
 
 export function openExternal(url: string) {
