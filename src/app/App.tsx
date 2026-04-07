@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import "../App.css";
 import { StatusPill } from "../components/StatusPill";
-import { ReleasePicker } from "../features/downloads/ReleasePicker";
+// import { ReleasePicker } from "../features/downloads/ReleasePicker";
 import { GeneratorPanel } from "../features/generator/GeneratorPanel";
 import { ServicePanel } from "../features/onboarding/ApiKeyForm";
 import { RepoSummary } from "../features/repo-status/RepoSummary";
