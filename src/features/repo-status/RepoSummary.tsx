@@ -41,6 +41,25 @@ function contextLabel(viewState: ViewState) {
   return "Repo ready";
 }
 
+function renderGuidance(viewState: ViewState) {
+  switch (viewState) {
+    case "invalid_launch_context":
+      return "Choose a Git repository to continue. GitRoast only works against real repositories.";
+    case "no_staged_changes":
+      return "Stage the changes for this commit first. GitRoast only reads the staged diff you prepare.";
+    case "ready_to_generate":
+      return "Looks good. Generate one commit line whenever you are ready.";
+    case "generating":
+      return "GitRoast is using the current staged diff to prepare one commit line.";
+    case "generation_success":
+      return "The current staged diff already has a generated commit line ready to copy.";
+    case "generation_error":
+      return "The staged diff is still intact. You can retry generation after reviewing the error.";
+    default:
+      return "GitRoast is checking the selected repository.";
+  }
+}
+
 function formatKilobytes(bytes: number | null | undefined) {
   if (!bytes) {
     return "0 KB";
@@ -60,13 +79,13 @@ export function RepoSummary({
   onRefresh,
 }: RepoSummaryProps) {
   const repoName = repoContext?.repoName ?? "Unknown repo";
-  const repoRoot = repoContext?.repoRoot ?? "No repository detected";
   const tone = getContextTone(viewState);
+  const stagedFilesLabel = `${repoStatus?.stagedFileCount ?? 0} staged files`;
 
   return (
     <Panel
-      title="Repository Context"
-      subtitle="Repository inspection stays local. GitRoast reads staged Git changes from the selected repo root and only sends data when you generate."
+      title="Selected Repo"
+      subtitle="Choose the repo, confirm the staged diff, then generate one commit line."
       aside={
         <div className="panel-actions">
           <StatusPill tone={tone}>{contextLabel(viewState)}</StatusPill>
@@ -97,36 +116,25 @@ export function RepoSummary({
         <div className="boot-note">Checking launch context and staged changes...</div>
       ) : null}
 
-      <div className="fact-list">
-        <div className="fact-row">
-          <span className="fact-label">Launch path</span>
-          <span className="fact-value fact-value-path">{launchPath || "Not set"}</span>
+      <div className="readiness-list">
+        <div className="readiness-row">
+          <span className="readiness-label">Repository</span>
+          <strong>{repoContext?.isRepo ? repoName : "No repository selected"}</strong>
         </div>
-        <div className="fact-row">
-          <span className="fact-label">Repository</span>
-          <span className="fact-value">{repoName}</span>
+        <div className="readiness-row">
+          <span className="readiness-label">Staged changes</span>
+          <strong>{stagedFilesLabel}</strong>
         </div>
-        <div className="fact-row">
-          <span className="fact-label">Root</span>
-          <span className="fact-value fact-value-path">{repoRoot}</span>
-        </div>
-        <div className="fact-row">
-          <span className="fact-label">Git available</span>
-          <span className="fact-value">
-            {repoContext?.gitAvailable ? "Yes" : "No"}
-          </span>
-        </div>
-        <div className="fact-row">
-          <span className="fact-label">Staged files</span>
-          <span className="fact-value">{repoStatus?.stagedFileCount ?? 0}</span>
-        </div>
-        <div className="fact-row">
-          <span className="fact-label">Diff size</span>
-          <span className="fact-value">
-            {formatKilobytes(repoStatus?.diffByteSize)}
-          </span>
+        <div className="readiness-row">
+          <span className="readiness-label">Diff size</span>
+          <strong>{formatKilobytes(repoStatus?.diffByteSize)}</strong>
         </div>
       </div>
+
+      <p className="repo-note">{renderGuidance(viewState)}</p>
+      {repoContext?.isRepo ? (
+        <p className="repo-caption">Working from {launchPath || repoName}</p>
+      ) : null}
     </Panel>
   );
 }
