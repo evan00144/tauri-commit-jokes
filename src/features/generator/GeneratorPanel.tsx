@@ -10,7 +10,6 @@ type GeneratorPanelProps = {
   viewState: ViewState;
   repoStatus: RepoStatusResult | null;
   generation: GenerateCommitMessageResult | null;
-  activeModel: string;
   copyState: "idle" | "copied" | "error";
   booting: boolean;
   inlineError: string | null;
@@ -21,19 +20,38 @@ type GeneratorPanelProps = {
 function renderStateCopy(viewState: ViewState) {
   switch (viewState) {
     case "invalid_launch_context":
-      return "Point GitRoast at a valid repository before requesting a generated commit message.";
+      return "Choose a valid Git repository before asking GitRoast for a commit line.";
     case "no_staged_changes":
-      return "Stage files first, then generate from the exact diff you intend to commit.";
+      return "Stage the files you want in this commit, then generate from that exact diff.";
     case "ready_to_generate":
-      return "Everything is ready. Generate one hosted commit suggestion from the staged diff.";
+      return "Everything is ready from your staged diff.";
     case "generating":
-      return "GitRoast is submitting the staged diff to the hosted service and waiting on one response.";
+      return "GitRoast is generating one commit line from the staged diff you selected.";
     case "generation_success":
-      return "One generated commit message is ready to review and copy.";
+      return "Your commit line is ready to review and copy.";
     case "generation_error":
-      return "Generation failed. Review the service state below and try again.";
+      return "Generation failed. Review the note below and try again.";
     default:
-      return "GitRoast is checking the current launch context.";
+      return "GitRoast is checking the selected repository.";
+  }
+}
+
+function renderStatusLabel(viewState: ViewState) {
+  switch (viewState) {
+    case "invalid_launch_context":
+      return "Pick a repo";
+    case "no_staged_changes":
+      return "Stage changes";
+    case "ready_to_generate":
+      return "Ready";
+    case "generating":
+      return "Generating";
+    case "generation_success":
+      return "Ready to copy";
+    case "generation_error":
+      return "Try again";
+    default:
+      return "Checking";
   }
 }
 
@@ -41,7 +59,6 @@ export function GeneratorPanel({
   viewState,
   repoStatus,
   generation,
-  activeModel,
   copyState,
   booting,
   inlineError,
@@ -55,12 +72,22 @@ export function GeneratorPanel({
       viewState === "generation_error");
 
   const copyLabel =
-    copyState === "copied" ? "Copied" : copyState === "error" ? "Copy failed" : "Copy";
+    copyState === "copied"
+      ? "Copied"
+      : copyState === "error"
+        ? "Copy failed"
+        : "Copy commit line";
+  const primaryLabel =
+    viewState === "generating"
+      ? "Generating commit line..."
+      : generation?.success
+        ? "Generate again"
+        : "Generate commit line";
 
   return (
     <Panel
-      title="Commit Generator"
-      subtitle={`${renderStateCopy(viewState)} Active backend model: ${activeModel}.`}
+      title="Commit Line"
+      subtitle={renderStateCopy(viewState)}
       aside={
         <StatusPill
           tone={
@@ -71,22 +98,28 @@ export function GeneratorPanel({
                 : "warning"
           }
         >
-          {viewState.split("_").join(" ")}
+          {renderStatusLabel(viewState)}
         </StatusPill>
       }
     >
       <div className="message-box">
         {generation?.success && generation.message ? (
-          <>
+          <div className="generated-result">
             <pre>{generation.message}</pre>
+            <p className="muted">
+              Review it, copy it, then finish the commit in your normal workflow.
+            </p>
             {generation.analysis ? <p className="muted">{generation.analysis}</p> : null}
-          </>
+          </div>
         ) : (
-          <p className="muted">
-            {repoStatus?.hasStagedChanges
-              ? "No commit message has been generated for the current staged diff yet."
-              : "Waiting for a valid staged diff before generation can start."}
-          </p>
+          <div className="empty-state">
+            <p className="empty-state-kicker">No commit line yet</p>
+            <p className="muted">
+              {repoStatus?.hasStagedChanges
+                ? "Your next commit line will appear here once you generate from the current staged diff."
+                : "Stage the files you want in this commit. GitRoast only uses the staged diff you prepare."}
+            </p>
+          </div>
         )}
 
         {inlineError ? <p className="error-copy">{inlineError}</p> : null}
@@ -99,7 +132,7 @@ export function GeneratorPanel({
           disabled={!canGenerate}
           onClick={onGenerate}
         >
-          {viewState === "generating" ? "Generating..." : "Generate"}
+          {primaryLabel}
         </button>
 
         <button

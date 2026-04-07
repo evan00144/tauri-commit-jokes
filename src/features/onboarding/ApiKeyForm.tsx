@@ -17,41 +17,33 @@ export function ServicePanel({
 }: ServicePanelProps) {
   const tone = serviceStatus?.ok ? "success" : "warning";
   const label = refreshingService
-    ? "Checking backend"
+    ? "Checking service"
     : serviceStatus?.ok
-      ? "Backend healthy"
-      : "Backend unavailable";
+      ? "Service online"
+      : "Service degraded";
 
   return (
     <Panel
-      title="Service Health"
-      subtitle="GitRoast calls a hosted commit generation service. The desktop app does not ask for Gemini, OpenRouter, or any local API key."
+      title="Privacy & Service"
+      subtitle="GitRoast keeps repo inspection local and contacts the hosted service only when you generate."
       aside={<StatusPill tone={tone}>{label}</StatusPill>}
     >
       <div className="detail-list">
         <div className="detail-row">
-          <span className="detail-label">Base URL</span>
-          <span className="detail-value">
-            {serviceStatus?.baseUrl ?? "https://tauri-silly.evannave.site"}
-          </span>
+          <span className="detail-label">Local only</span>
+          <span className="detail-value">Repo checks and staged file inspection</span>
         </div>
         <div className="detail-row">
-          <span className="detail-label">Service</span>
-          <span className="detail-value">
-            {serviceStatus?.serviceName ?? "git-joke-commit-api"}
-          </span>
+          <span className="detail-label">Sent on generate</span>
+          <span className="detail-value">Staged diff text</span>
         </div>
         <div className="detail-row">
-          <span className="detail-label">Server model</span>
-          <span className="detail-value">{serviceStatus?.modelName ?? "API default"}</span>
+          <span className="detail-label">Setup</span>
+          <span className="detail-value">No local API key required</span>
         </div>
         <div className="detail-row">
-          <span className="detail-label">Desktop client</span>
-          <span className="detail-value">Public app build</span>
-        </div>
-        <div className="detail-row">
-          <span className="detail-label">Generation payload</span>
-          <span className="detail-value">Staged status plus staged diff</span>
+          <span className="detail-label">If service is busy</span>
+          <span className="detail-value">Retry the same staged diff once it recovers</span>
         </div>
       </div>
 
@@ -64,14 +56,14 @@ export function ServicePanel({
             void onRefresh();
           }}
         >
-          {refreshingService ? "Checking backend..." : "Refresh backend status"}
+          {refreshingService ? "Checking service..." : "Refresh service status"}
         </button>
       </div>
 
       {!serviceStatus?.ok ? (
         <p className="error-copy">
-          The health check is failing right now. Generation may still be attempted, but the hosted
-          service can reject requests until it recovers.
+          The hosted service looks degraded right now. Your staged diff stays local until you try
+          again, so wait a moment and retry when the service recovers.
         </p>
       ) : null}
 

@@ -2,7 +2,7 @@
 
 GitRoast is a desktop app that reads staged Git changes, sends them to a hosted commit-joke API, and returns one commit message worth copying into your normal workflow.
 
-The desktop client is public. The hosted AI backend is not part of this repository.
+GitRoast is positioned as a closed-source desktop client backed by a hosted generation service.
 
 If GitRoast saved you time or made your commit history less boring, support the project on Trakteer:
 - [trakteer.id/evan_0014](https://trakteer.id/evan_0014)
@@ -10,7 +10,7 @@ If GitRoast saved you time or made your commit history less boring, support the 
 ## What It Is
 
 - A Tauri desktop app for generating humorous commit messages from staged changes
-- A public client that lets users inspect how repository data is collected and sent
+- A focused desktop tool that keeps repository inspection local and sends data only on demand
 - A lightweight tool built for fast commit-message generation, not full Git workflow management
 
 ## What It Is Not
@@ -33,6 +33,8 @@ GitRoast does not:
 - auto-commit
 - rewrite your repository
 - ask you for a local Gemini, OpenRouter, or other AI API key
+
+Trust in the product comes from clear data-flow behavior in the UI, not from exposing backend or source-code implementation details.
 
 ## Stack
 

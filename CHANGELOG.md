@@ -6,9 +6,11 @@ The release workflow reads the section matching the pushed tag version and uses 
 
 ## [Unreleased]
 
-### Added
+### Changed
 
-- Placeholder for upcoming changes.
+- Repositioned the app around closed-source trust messaging instead of source-code visibility.
+- Simplified the main workflow UI around one path: choose repo, stage changes, generate, copy.
+- Replaced backend detail panels with clearer privacy and service language.
 
 ## [0.1.0] - 2026-04-06
 

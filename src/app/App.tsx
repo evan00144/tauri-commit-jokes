@@ -241,30 +241,34 @@ export default function App() {
 
   const generationError =
     generation && !generation.success ? describeError(generation.errorCode) : inlineError;
-  const activeModel = serviceStatus?.modelName ?? "API default";
   const workflowSteps = [
     {
       step: "01",
-      title: "Point GitRoast at the repository",
-      body: "Launch from the repo you want, or switch targets at any time with the repo picker.",
+      title: "Choose the repo",
+      body: "Point GitRoast at the project you want and switch targets anytime from the picker.",
     },
     {
       step: "02",
-      title: "Stage exactly what matters",
-      body: "GitRoast inspects only staged file names, status, and diff content before generation.",
+      title: "Stage the exact changes",
+      body: "GitRoast reads only the staged diff you prepare for this commit.",
     },
     {
       step: "03",
-      title: "Generate and keep moving",
-      body: "Request one hosted commit suggestion, copy it, and finish the commit in your normal workflow.",
+      title: "Generate and copy",
+      body: "Request one commit line, copy it, and finish the commit in your normal workflow.",
     },
   ];
-  const assuranceItems = [
-    { label: "Desktop setup", value: "No local AI keys" },
-    { label: "Sent on generate", value: "Staged names + diff" },
-    { label: "Support model", value: "Optional Trakteer" },
+  const trustBullets = [
+    "Works locally on your selected repository",
+    "Sends staged diff text only when you click Generate",
+    "No local API key required",
   ];
-  const productStatus = serviceStatus?.ok ? "Hosted service online" : "Hosted service degraded";
+  const productStatus = serviceStatus?.ok ? "Service online" : "Service degraded";
+  const repoStatusLabel = !repoContext?.repoRoot
+    ? "Choose a repo"
+    : repoStatus?.hasStagedChanges
+      ? "Staged diff ready"
+      : "Stage changes to continue";
 
   return (
     <main className="app-shell">
@@ -277,22 +281,28 @@ export default function App() {
                 {productStatus}
               </StatusPill>
               <StatusPill tone={repoStatus?.hasStagedChanges ? "success" : "warning"}>
-                {repoStatus?.hasStagedChanges ? "Staged diff ready" : "Waiting on staged diff"}
+                {repoStatusLabel}
               </StatusPill>
             </div>
           </div>
 
           <div className="hero-layout">
             <div className="hero-copy-block">
-              <h1>Polished commit jokes from staged changes, without local AI setup.</h1>
+              <h1>Generate a clean commit line from the changes you already staged.</h1>
               <p>
-                GitRoast inspects your selected repository locally, sends staged Git text to the
-                hosted commit service only when you press Generate, and returns one commit message
-                worth pasting. Current backend model: {activeModel}.
+                GitRoast works locally on your selected repo, sends the staged diff only when you
+                click Generate, and returns one commit line ready to copy.
               </p>
+              <div className="hero-trust-list">
+                {trustBullets.map((item) => (
+                  <span className="trust-chip" key={item}>
+                    {item}
+                  </span>
+                ))}
+              </div>
               <div className="hero-actions hero-actions-primary">
                 <button
-                  className="button-secondary"
+                  className="button-primary"
                   type="button"
                   onClick={() => {
                     void handleChooseRepo();
@@ -301,76 +311,45 @@ export default function App() {
                 >
                   {switchingRepo ? "Opening picker..." : "Choose repo root"}
                 </button>
-                <button
-                  className="button-ghost"
-                  type="button"
-                  onClick={() => {
-                    void handleOpenExternal("https://github.com/evan00144/tauri-commit-jokes");
-                  }}
-                >
-                  View source
-                </button>
               </div>
             </div>
 
             <aside className="hero-overview-card">
               <div className="overview-header">
-                <span className="overview-kicker">Service overview</span>
-                <span className="overview-model">{activeModel}</span>
+                <span className="overview-kicker">What happens here</span>
+                <span className="overview-model">Three quick steps</span>
               </div>
               <div className="overview-grid">
-                {assuranceItems.map((item) => (
-                  <div className="overview-row" key={item.label}>
-                    <span className="overview-label">{item.label}</span>
-                    <strong>{item.value}</strong>
+                {workflowSteps.map((item) => (
+                  <div className="overview-row" key={item.step}>
+                    <span className="overview-label">{item.step}</span>
+                    <strong>{item.title}</strong>
                   </div>
                 ))}
               </div>
               <p className="overview-note">
-                GitRoast is funded by optional support, not by asking users to bring their own API
-                keys.
+                GitRoast never auto-commits, edits files, or writes to your repository.
               </p>
             </aside>
           </div>
 
-          <div className="hero-cta-grid">
+          <div className="support-strip">
+            <div className="support-copy">
+              <span className="support-kicker">Optional support</span>
+              <strong>Donations help cover the hosted generation service and desktop releases.</strong>
+              <p className="support-note">
+                If GitRoast earns a place in your workflow, support keeps the app simple and
+                key-free.
+              </p>
+            </div>
             <button
-              className="promo-card promo-card-source link-button"
-              type="button"
-              onClick={() => {
-                void handleOpenExternal("https://github.com/evan00144/tauri-commit-jokes");
-              }}
-            >
-              <span className="promo-icon" aria-hidden="true">
-                {"</>"}
-              </span>
-              <span className="promo-copy">
-                <strong>Transparent desktop client</strong>
-                <span>
-                  Inspect how GitRoast reads your repo, what it sends, and how the app talks to the
-                  hosted service.
-                </span>
-              </span>
-              <span className="promo-kicker">GitHub</span>
-            </button>
-            <button
-              className="promo-card promo-card-drink link-button"
+              className="button-ghost support-button"
               type="button"
               onClick={() => {
                 void handleOpenExternal("https://trakteer.id/evan_0014");
               }}
             >
-              <span className="promo-icon" aria-hidden="true">
-                +$
-              </span>
-              <span className="promo-copy">
-                <strong>Support the hosted service</strong>
-                <span>
-                  If GitRoast earns a place in your workflow, Trakteer helps cover the model and
-                  release costs behind it.
-                </span>
-              </span>
-              <span className="promo-kicker">Trakteer</span>
+              Support GitRoast
             </button>
           </div>
         </section>
@@ -378,13 +357,12 @@ export default function App() {
         <section className="panel workflow-panel">
           <div className="panel-header workflow-header">
             <div>
-              <h2 className="panel-title">How GitRoast Handles A Request</h2>
+              <h2 className="panel-title">How It Works</h2>
               <p className="panel-subtitle">
-                Local repository checks first, one hosted generation call second, copy and commit
-                last.
+                One staged diff in, one commit line out.
               </p>
             </div>
-            <div className="tutorial-badge">Three-step flow</div>
+            <div className="tutorial-badge">From staged diff to copy</div>
           </div>
           <div className="workflow-grid">
             {workflowSteps.map((item) => (
@@ -398,11 +376,11 @@ export default function App() {
 
           <div className="trust-strip">
             <div className="trust-item">
-              <span className="trust-label">Privacy posture</span>
-              <strong>Only staged Git status and staged diff are sent for generation.</strong>
+              <span className="trust-label">Local first</span>
+              <strong>GitRoast checks repo state locally before any hosted request is made.</strong>
             </div>
             <div className="trust-item">
-              <span className="trust-label">Write behavior</span>
+              <span className="trust-label">You stay in control</span>
               <strong>GitRoast never auto-commits or edits your repository.</strong>
             </div>
           </div>
@@ -411,6 +389,17 @@ export default function App() {
         {/* <ReleasePicker onOpenExternal={handleOpenExternal} /> */}
 
         <div className="grid">
+          <GeneratorPanel
+            viewState={viewState}
+            repoStatus={repoStatus}
+            generation={generation}
+            copyState={copyState}
+            booting={booting}
+            inlineError={generationError}
+            onGenerate={handleGenerate}
+            onCopy={handleCopy}
+          />
+
           <div className="stack">
             <RepoSummary
               repoContext={repoContext}
@@ -429,23 +418,11 @@ export default function App() {
               onRefresh={refreshServiceState}
             />
           </div>
-
-          <GeneratorPanel
-            viewState={viewState}
-            repoStatus={repoStatus}
-            generation={generation}
-            activeModel={activeModel}
-            copyState={copyState}
-            booting={booting}
-            inlineError={generationError}
-            onGenerate={handleGenerate}
-            onCopy={handleCopy}
-          />
         </div>
 
         <p className="footer-note">
-          GitRoast keeps repository inspection local, sends hosted requests only on demand, and is
-          maintained through public releases plus optional Trakteer support.
+          GitRoast keeps repository checks local and only sends a hosted request when you ask for
+          one.
         </p>
       </div>
     </main>
